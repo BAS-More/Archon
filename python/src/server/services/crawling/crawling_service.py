@@ -342,7 +342,8 @@ class CrawlingService:
                     "discovery", 25, f"Discovering best related file for {url}", current_url=url
                 )
                 try:
-                    discovered_file = self.discovery_service.discover_files(url)
+                    # Offload potential sync I/O to avoid blocking the event loop
+                    discovered_file = await asyncio.to_thread(self.discovery_service.discover_files, url)
 
                     # Add the single best discovered file to crawl list
                     if discovered_file:
@@ -601,11 +602,10 @@ class CrawlingService:
         """
         try:
             from urllib.parse import urlparse
-            
-            url_domain = urlparse(url).netloc.lower()
-            base_netloc = urlparse(base_domain).netloc.lower()
-            
-            return url_domain == base_netloc
+            u, b = urlparse(url), urlparse(base_domain)
+            url_host = (u.hostname or "").lower()
+            base_host = (b.hostname or "").lower()
+            return bool(url_host) and url_host == base_host
         except Exception:
             # If parsing fails, be conservative and exclude the URL
             return False
@@ -714,15 +714,30 @@ class CrawlingService:
                         extracted_links = list(dict.fromkeys(extracted_links))
 
                     if extracted_links:
-                        # Crawl the extracted links using batch crawling
-                        logger.info(f"Crawling {len(extracted_links)} extracted links from {url}")
-                        batch_results = await self.crawl_batch_with_progress(
-                            extracted_links,
-                            max_concurrent=request.get('max_concurrent'),  # None -> use DB settings
-                            progress_callback=await self._create_crawl_progress_callback("crawling"),
-                            start_progress=10,
-                            end_progress=20,
-                        )
+                        # For discovery targets, respect max_depth for same-domain links
+                        max_depth = request.get('max_depth', 2)  # Default depth 2
+                        
+                        if max_depth > 1:
+                            # Use recursive crawling to respect depth limit for same-domain links
+                            logger.info(f"Crawling {len(extracted_links)} same-domain links with max_depth={max_depth-1}")
+                            batch_results = await self.crawl_recursive_with_progress(
+                                extracted_links,
+                                max_depth=max_depth - 1,  # Reduce depth since we're already 1 level deep
+                                max_concurrent=request.get('max_concurrent'),
+                                progress_callback=await self._create_crawl_progress_callback("crawling"),
+                                start_progress=10,
+                                end_progress=20,
+                            )
+                        else:
+                            # Depth limit reached, just crawl the immediate links without following further
+                            logger.info(f"Max depth reached, crawling {len(extracted_links)} links without further recursion")
+                            batch_results = await self.crawl_batch_with_progress(
+                                extracted_links,
+                                max_concurrent=request.get('max_concurrent'),
+                                progress_callback=await self._create_crawl_progress_callback("crawling"),
+                                start_progress=10,
+                                end_progress=20,
+                            )
 
                         # Combine original text file results with batch results
                         crawl_results.extend(batch_results)
