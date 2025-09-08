@@ -156,6 +156,7 @@ class TestURLHandler:
         handler = URLHandler()
         
         # All llms variants
+        assert handler.is_llms_variant("https://example.com/llms-full.txt") is True
         assert handler.is_llms_variant("https://example.com/llms.txt") is True
         assert handler.is_llms_variant("https://example.com/llms.md") is True
         assert handler.is_llms_variant("https://example.com/llms.mdx") is True

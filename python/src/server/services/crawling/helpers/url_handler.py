@@ -399,8 +399,9 @@ class URLHandler:
             # Pattern-based detection for variations, but exclude "full" variants
             # Only match files that are likely link collections, not complete content files
             if filename.endswith(('.txt', '.md', '.mdx', '.markdown')):
-                # Exclude files with "full" in the name - these typically contain complete content, not just links
-                if 'full' not in filename:
+                # Exclude files with "full" as standalone token (avoid false positives like "helpful.md")
+                import re
+                if not re.search(r'(^|[._-])full([._-]|$)', filename):
                     # Match files that start with common link collection prefixes
                     base_patterns = ['llms', 'links', 'resources', 'references']
                     if any(filename.startswith(pattern + '.') or filename.startswith(pattern + '-') for pattern in base_patterns):
@@ -410,7 +411,8 @@ class URLHandler:
             # Content-based detection if content is provided
             if content:
                 # Never treat "full" variants as link collections to preserve single-page behavior
-                if 'full' in filename:
+                import re
+                if re.search(r'(^|[._-])full([._-]|$)', filename):
                     logger.info(f"Skipping content-based link-collection detection for full-content file: {filename}")
                     return False
                 # Reuse extractor to avoid regex divergence and maintain consistency
@@ -622,7 +624,7 @@ class URLHandler:
             filename = path.split('/')[-1] if '/' in path else path
 
             # Check for llms file variants
-            llms_variants = ['llms.txt', 'llms.md', 'llms.mdx', 'llms.markdown']
+            llms_variants = ['llms-full.txt', 'llms.txt', 'llms.md', 'llms.mdx', 'llms.markdown']
             return filename in llms_variants
         except Exception as e:
             logger.warning(f"Error checking if URL is llms variant: {e}", exc_info=True)

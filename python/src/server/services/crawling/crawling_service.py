@@ -135,15 +135,16 @@ class CrawlingService:
                     f"kwargs_keys={list(kwargs.keys())}"
                 )
 
-                # Update progress via tracker (stores in memory for HTTP polling)
+                # Update progress via tracker (stage-mapped to avoid regressions)
+                mapped = self.progress_mapper.map_progress(base_status, progress)
                 await self.progress_tracker.update(
                     status=base_status,
-                    progress=progress,
+                    progress=mapped,
                     log=message,
                     **kwargs
                 )
                 safe_logfire_info(
-                    f"Updated crawl progress | progress_id={self.progress_id} | status={base_status} | progress={progress} | "
+                    f"Updated crawl progress | progress_id={self.progress_id} | status={base_status} | progress={mapped} | "
                     f"total_pages={kwargs.get('total_pages', 'N/A')} | processed_pages={kwargs.get('processed_pages', 'N/A')}"
                 )
 
@@ -379,9 +380,16 @@ class CrawlingService:
                     processed_pages=0
                 )
                 
-                # Crawl only the discovered file
-                safe_logfire_info(f"Crawling discovered file instead of main URL: {discovered_urls[0]}")
-                crawl_results, crawl_type = await self._crawl_by_url_type(discovered_urls[0], request)
+                # Crawl only the discovered file with discovery context
+                discovered_url = discovered_urls[0]
+                safe_logfire_info(f"Crawling discovered file instead of main URL: {discovered_url}")
+                
+                # Mark this as a discovery target for domain filtering
+                discovery_request = request.copy()
+                discovery_request["is_discovery_target"] = True
+                discovery_request["original_domain"] = self.url_handler.get_base_url(url)
+                
+                crawl_results, crawl_type = await self._crawl_by_url_type(discovered_url, discovery_request)
                 
             else:
                 # No discovery - crawl the main URL normally
@@ -580,6 +588,28 @@ class CrawlingService:
                     f"Unregistered orchestration service on error | progress_id={self.progress_id}"
                 )
 
+    def _is_same_domain(self, url: str, base_domain: str) -> bool:
+        """
+        Check if a URL belongs to the same domain as the base domain.
+        
+        Args:
+            url: URL to check
+            base_domain: Base domain URL to compare against
+            
+        Returns:
+            True if the URL is from the same domain
+        """
+        try:
+            from urllib.parse import urlparse
+            
+            url_domain = urlparse(url).netloc.lower()
+            base_netloc = urlparse(base_domain).netloc.lower()
+            
+            return url_domain == base_netloc
+        except Exception:
+            # If parsing fails, be conservative and exclude the URL
+            return False
+
     def _is_self_link(self, link: str, base_url: str) -> bool:
         """
         Check if a link is a self-referential link to the base URL.
@@ -659,6 +689,19 @@ class CrawlingService:
                         if self_filtered_count > 0:
                             logger.info(f"Filtered out {self_filtered_count} self-referential links from {original_count} extracted links")
 
+                    # For discovery targets, only follow same-domain links
+                    if extracted_links and request.get("is_discovery_target"):
+                        original_domain = request.get("original_domain")
+                        if original_domain:
+                            original_count = len(extracted_links)
+                            extracted_links = [
+                                link for link in extracted_links 
+                                if self._is_same_domain(link, original_domain)
+                            ]
+                            domain_filtered_count = original_count - len(extracted_links)
+                            if domain_filtered_count > 0:
+                                safe_logfire_info(f"Discovery mode: filtered out {domain_filtered_count} external links, keeping {len(extracted_links)} same-domain links")
+
                     # Filter out binary files (PDFs, images, archives, etc.) to avoid wasteful crawling
                     if extracted_links:
                         original_count = len(extracted_links)
@@ -666,6 +709,9 @@ class CrawlingService:
                         filtered_count = original_count - len(extracted_links)
                         if filtered_count > 0:
                             logger.info(f"Filtered out {filtered_count} binary files from {original_count} extracted links")
+
+                        # Deduplicate to reduce redundant work
+                        extracted_links = list(dict.fromkeys(extracted_links))
 
                     if extracted_links:
                         # Crawl the extracted links using batch crawling
