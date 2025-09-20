@@ -31,23 +31,23 @@ class TestProgressMapper:
 
         # Discovery stage (3-4%) - NEW TEST FOR DISCOVERY FEATURE
         progress = mapper.map_progress("discovery", 50)
-        assert progress == 3  # 3 + (50% of 1) = 3.5 -> 3
+        assert progress == 4  # 3 + (50% of 1) = 3.5 -> 4 (rounds up)
 
         # Crawling stage (4-15%)
         progress = mapper.map_progress("crawling", 50)
-        assert progress == 9  # 4 + (50% of 11) = 9.5 -> 9
+        assert progress == 10  # 4 + (50% of 11) = 9.5 -> 10 (rounds up)
 
     def test_progress_never_goes_backwards(self):
         """Test that progress never decreases"""
         mapper = ProgressMapper()
 
-        # Move to 50% of crawling (4-15%) = 9.5 -> 9%
+        # Move to 50% of crawling (4-15%) = 9.5 -> 10%
         progress1 = mapper.map_progress("crawling", 50)
-        assert progress1 == 9
+        assert progress1 == 10
 
-        # Try to go back to analyzing (1-3%) - should stay at 9%
+        # Try to go back to analyzing (1-3%) - should stay at 10%
         progress2 = mapper.map_progress("analyzing", 100)
-        assert progress2 == 9  # Should not go backwards
+        assert progress2 == 10  # Should not go backwards
 
         # Can move forward to document_storage
         progress3 = mapper.map_progress("document_storage", 50)
@@ -211,7 +211,7 @@ class TestProgressMapper:
         assert mapper.get_current_progress() == 0
 
         mapper.map_progress("crawling", 50)
-        assert mapper.get_current_progress() == 9  # 4 + (50% of 11) = 9.5 -> 9
+        assert mapper.get_current_progress() == 10  # 4 + (50% of 11) = 9.5 -> 10
 
         mapper.map_progress("code_extraction", 50)
         assert mapper.get_current_progress() == 65  # 40 + (50% of 50) = 65
@@ -239,12 +239,12 @@ class TestProgressMapper:
 
         # Discovery (NEW)
         assert mapper.map_progress("discovery", 0) == 3
-        assert mapper.map_progress("discovery", 50) == 3  # 3 + (50% of 1) = 3.5 -> 3
+        assert mapper.map_progress("discovery", 50) == 4  # 3 + (50% of 1) = 3.5 -> 4 (rounds up)
         assert mapper.map_progress("discovery", 100) == 4
 
         # Crawling
         assert mapper.map_progress("crawling", 0) == 4
-        assert mapper.map_progress("crawling", 33) == 7  # 4 + (33% of 11) = 7.63 -> 8 but may round to 7
+        assert mapper.map_progress("crawling", 33) == 8  # 4 + (33% of 11) = 7.63 -> 8 (rounds up)
         progress_crawl_66 = mapper.map_progress("crawling", 66)
         assert progress_crawl_66 in [11, 12]  # 4 + (66% of 11) = 11.26, could round to 11 or 12
         assert mapper.map_progress("crawling", 100) == 15
