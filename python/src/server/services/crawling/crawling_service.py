@@ -135,16 +135,19 @@ class CrawlingService:
                     f"kwargs_keys={list(kwargs.keys())}"
                 )
 
-                # Update progress via tracker (stage-mapped to avoid regressions)
-                mapped = self.progress_mapper.map_progress(base_status, progress)
+                # Map the progress to the overall progress range
+                mapped_progress = self.progress_mapper.map_progress(base_status, progress)
+
+                # Update progress via tracker (stores in memory for HTTP polling)
                 await self.progress_tracker.update(
                     status=base_status,
-                    progress=mapped,
+                    progress=mapped_progress,
                     log=message,
                     **kwargs
                 )
                 safe_logfire_info(
-                    f"Updated crawl progress | progress_id={self.progress_id} | status={base_status} | progress={mapped} | "
+                    f"Updated crawl progress | progress_id={self.progress_id} | status={base_status} | "
+                    f"raw_progress={progress} | mapped_progress={mapped_progress} | "
                     f"total_pages={kwargs.get('total_pages', 'N/A')} | processed_pages={kwargs.get('processed_pages', 'N/A')}"
                 )
 
@@ -178,7 +181,8 @@ class CrawlingService:
         )
 
     async def crawl_markdown_file(
-        self, url: str, progress_callback: Callable[[str, int, str], Awaitable[None]] | None = None, start_progress: int = 10, end_progress: int = 20
+        self, url: str, progress_callback: Callable[[str, int, str], Awaitable[None]] | None = None,
+        start_progress: int = 10, end_progress: int = 20
     ) -> list[dict[str, Any]]:
         """Crawl a .txt or markdown file."""
         return await self.single_page_strategy.crawl_markdown_file(
@@ -244,7 +248,7 @@ class CrawlingService:
             request: The crawl request containing url, knowledge_type, tags, max_depth, etc.
 
         Returns:
-            Dict containing task_id and status
+            Dict containing task_id, status, and the asyncio task reference
         """
         url = str(request.get("url", ""))
         safe_logfire_info(f"Starting background crawl orchestration | url={url}")
@@ -257,14 +261,20 @@ class CrawlingService:
             register_orchestration(self.progress_id, self)
 
         # Start the crawl as an async task in the main event loop
-        asyncio.create_task(self._async_orchestrate_crawl(request, task_id))
+        # Store the task reference for proper cancellation
+        crawl_task = asyncio.create_task(self._async_orchestrate_crawl(request, task_id))
 
-        # Return immediately
+        # Set a name for the task to help with debugging
+        if self.progress_id:
+            crawl_task.set_name(f"crawl_{self.progress_id}")
+
+        # Return immediately with task reference
         return {
             "task_id": task_id,
             "status": "started",
             "message": f"Crawl operation started for {url}",
             "progress_id": self.progress_id,
+            "task": crawl_task,  # Return the actual task for proper cancellation
         }
 
     async def _async_orchestrate_crawl(self, request: dict[str, Any], task_id: str):
@@ -407,9 +417,11 @@ class CrawlingService:
 
             # Update progress tracker with crawl type
             if self.progress_tracker and crawl_type:
+                # Use mapper to get correct progress value
+                mapped_progress = self.progress_mapper.map_progress("crawling", 100)  # 100% of crawling stage
                 await self.progress_tracker.update(
                     status="crawling",
-                    progress=15,
+                    progress=mapped_progress,
                     log=f"Processing {crawl_type} content",
                     crawl_type=crawl_type
                 )
@@ -429,22 +441,42 @@ class CrawlingService:
             # Check for cancellation before document processing
             self._check_cancellation()
 
+            # Calculate total work units for accurate progress tracking
+            total_pages = len(crawl_results)
+
             # Process and store documents using document storage operations
+            last_logged_progress = 0
+
             async def doc_storage_callback(
                 status: str, progress: int, message: str, **kwargs
             ):
+                nonlocal last_logged_progress
+
+                # Log only significant progress milestones (every 5%) or status changes
+                should_log_debug = (
+                    status != "document_storage" or  # Status changes
+                    progress == 100 or  # Completion
+                    progress == 0 or  # Start
+                    abs(progress - last_logged_progress) >= 5  # 5% progress changes
+                )
+
+                if should_log_debug:
+                    safe_logfire_info(
+                        f"Document storage progress: {progress}% | status={status} | "
+                        f"message={message[:50]}..." + ("..." if len(message) > 50 else "")
+                    )
+                    last_logged_progress = progress
+
                 if self.progress_tracker:
                     # Use ProgressMapper to ensure progress never goes backwards
                     mapped_progress = self.progress_mapper.map_progress("document_storage", progress)
-                    safe_logfire_info(
-                        f"Document storage progress mapping: {progress}% -> {mapped_progress}% | kwargs: {list(kwargs.keys())}"
-                    )
 
                     # Update progress state via tracker
                     await self.progress_tracker.update(
                         status="document_storage",
                         progress=mapped_progress,
                         log=message,
+                        total_pages=total_pages,
                         **kwargs
                     )
 
@@ -459,6 +491,20 @@ class CrawlingService:
                 source_display_name=source_display_name,
             )
 
+            # Update progress tracker with source_id now that it's created
+            if self.progress_tracker and storage_results.get("source_id"):
+                # Update the tracker to include source_id for frontend matching
+                # Use update method to maintain timestamps and invariants
+                await self.progress_tracker.update(
+                    status=self.progress_tracker.state.get("status", "document_storage"),
+                    progress=self.progress_tracker.state.get("progress", 0),
+                    log=self.progress_tracker.state.get("log", "Processing documents"),
+                    source_id=storage_results["source_id"]
+                )
+                safe_logfire_info(
+                    f"Updated progress tracker with source_id | progress_id={self.progress_id} | source_id={storage_results['source_id']}"
+                )
+
             # Check for cancellation after document storage
             self._check_cancellation()
 
@@ -469,9 +515,12 @@ class CrawlingService:
             actual_chunks_stored = storage_results.get("chunks_stored", 0)
             if storage_results["chunk_count"] > 0 and actual_chunks_stored == 0:
                 # We processed chunks but none were stored - this is a failure
-                error_msg = f"Failed to store documents: {storage_results['chunk_count']} chunks processed but 0 stored"
+                error_msg = (
+                    f"Failed to store documents: {storage_results['chunk_count']} chunks processed but 0 stored "
+                    f"| url={url} | progress_id={self.progress_id}"
+                )
                 safe_logfire_error(error_msg)
-                raise Exception(error_msg)
+                raise ValueError(error_msg)
 
             # Extract code examples if requested
             code_examples_count = 0
@@ -493,18 +542,32 @@ class CrawlingService:
                             status=data.get("status", "code_extraction"),
                             progress=mapped_progress,
                             log=data.get("log", "Extracting code examples..."),
+                            total_pages=total_pages,  # Include total context
                             **{k: v for k, v in data.items() if k not in ["status", "progress", "percentage", "log"]}
                         )
 
-                code_examples_count = await self.doc_storage_ops.extract_and_store_code_examples(
-                    crawl_results,
-                    storage_results["url_to_full_document"],
-                    storage_results["source_id"],
-                    code_progress_callback,
-                    85,
-                    95,
-                    self._check_cancellation,
-                )
+                try:
+                    code_examples_count = await self.doc_storage_ops.extract_and_store_code_examples(
+                        crawl_results,
+                        storage_results["url_to_full_document"],
+                        storage_results["source_id"],
+                        code_progress_callback,
+                        self._check_cancellation,
+                    )
+                except RuntimeError as e:
+                    # Code extraction failed, continue crawl with warning
+                    logger.error("Code extraction failed, continuing crawl without code examples", exc_info=True)
+                    safe_logfire_error(f"Code extraction failed | error={e}")
+                    code_examples_count = 0
+                    
+                    # Report code extraction failure to progress tracker
+                    if self.progress_tracker:
+                        await self.progress_tracker.update(
+                            status="code_extraction",
+                            progress=self.progress_mapper.map_progress("code_extraction", 100),
+                            log=f"Code extraction failed: {str(e)}. Continuing crawl without code examples.",
+                            total_pages=total_pages,
+                        )
 
                 # Check for cancellation after code extraction
                 self._check_cancellation()
@@ -552,11 +615,13 @@ class CrawlingService:
 
         except asyncio.CancelledError:
             safe_logfire_info(f"Crawl operation cancelled | progress_id={self.progress_id}")
+            # Use ProgressMapper to get proper progress value for cancelled state
+            cancelled_progress = self.progress_mapper.map_progress("cancelled", 0)
             await self._handle_progress_update(
                 task_id,
                 {
                     "status": "cancelled",
-                    "progress": -1,
+                    "progress": cancelled_progress,
                     "log": "Crawl operation was cancelled by user",
                 },
             )
@@ -571,10 +636,12 @@ class CrawlingService:
             logger.error("Async crawl orchestration failed", exc_info=True)
             safe_logfire_error(f"Async crawl orchestration failed | error={str(e)}")
             error_message = f"Crawl failed: {str(e)}"
+            # Use ProgressMapper to get proper progress value for error state
+            error_progress = self.progress_mapper.map_progress("error", 0)
             await self._handle_progress_update(
                 task_id, {
                     "status": "error",
-                    "progress": -1,
+                    "progress": error_progress,
                     "log": error_message,
                     "error": str(e)
                 }
@@ -615,11 +682,11 @@ class CrawlingService:
         Check if a link is a self-referential link to the base URL.
         Handles query parameters, fragments, trailing slashes, and normalizes
         scheme/host/ports for accurate comparison.
-        
+
         Args:
             link: The link to check
             base_url: The base URL to compare against
-            
+
         Returns:
             True if the link is self-referential, False otherwise
         """
@@ -654,22 +721,29 @@ class CrawlingService:
         crawl_results = []
         crawl_type = None
 
+        # Helper to update progress with mapper
+        async def update_crawl_progress(stage_progress: int, message: str, **kwargs):
+            if self.progress_tracker:
+                mapped_progress = self.progress_mapper.map_progress("crawling", stage_progress)
+                await self.progress_tracker.update(
+                    status="crawling",
+                    progress=mapped_progress,
+                    log=message,
+                    current_url=url,
+                    **kwargs
+                )
+
         if self.url_handler.is_txt(url) or self.url_handler.is_markdown(url):
             # Handle text files
             crawl_type = "llms-txt" if "llms" in url.lower() else "text_file"
-            if self.progress_tracker:
-                await self.progress_tracker.update(
-                    status="crawling",
-                    progress=10,
-                    log="Detected text file, fetching content...",
-                    crawl_type=crawl_type,
-                    current_url=url
-                )
+            await update_crawl_progress(
+                50,  # 50% of crawling stage
+                "Detected text file, fetching content...",
+                crawl_type=crawl_type
+            )
             crawl_results = await self.crawl_markdown_file(
                 url,
                 progress_callback=await self._create_crawl_progress_callback("crawling"),
-                start_progress=5,
-                end_progress=10,
             )
             # Check if this is a link collection file and extract links
             if crawl_results and len(crawl_results) > 0:
@@ -695,7 +769,7 @@ class CrawlingService:
                         if original_domain:
                             original_count = len(extracted_links)
                             extracted_links = [
-                                link for link in extracted_links 
+                                link for link in extracted_links
                                 if self._is_same_domain(link, original_domain)
                             ]
                             domain_filtered_count = original_count - len(extracted_links)
@@ -715,9 +789,9 @@ class CrawlingService:
 
                     if extracted_links:
                         # For discovery targets, respect max_depth for same-domain links
-                        max_depth = request.get('max_depth', 2)  # Default depth 2
-                        
-                        if max_depth > 1:
+                        max_depth = request.get('max_depth', 2) if request.get("is_discovery_target") else request.get('max_depth', 1)
+
+                        if max_depth > 1 and request.get("is_discovery_target"):
                             # Use recursive crawling to respect depth limit for same-domain links
                             logger.info(f"Crawling {len(extracted_links)} same-domain links with max_depth={max_depth-1}")
                             batch_results = await self.crawl_recursive_with_progress(
@@ -738,6 +812,14 @@ class CrawlingService:
                                 start_progress=10,
                                 end_progress=20,
                             )
+                        else:
+                            # Use normal batch crawling for non-discovery or when max_depth is 1
+                            logger.info(f"Crawling {len(extracted_links)} extracted links from {url}")
+                            batch_results = await self.crawl_batch_with_progress(
+                                extracted_links,
+                                max_concurrent=request.get('max_concurrent'),  # None -> use DB settings
+                                progress_callback=await self._create_crawl_progress_callback("crawling"),
+                            )
 
                         # Combine original text file results with batch results
                         crawl_results.extend(batch_results)
@@ -751,45 +833,34 @@ class CrawlingService:
         elif self.url_handler.is_sitemap(url):
             # Handle sitemaps
             crawl_type = "sitemap"
-            if self.progress_tracker:
-                await self.progress_tracker.update(
-                    status="crawling",
-                    progress=10,
-                    log="Detected sitemap, parsing URLs...",
-                    crawl_type=crawl_type,
-                    current_url=url
-                )
+            await update_crawl_progress(
+                50,  # 50% of crawling stage
+                "Detected sitemap, parsing URLs...",
+                crawl_type=crawl_type
+            )
             sitemap_urls = self.parse_sitemap(url)
 
             if sitemap_urls:
                 # Update progress before starting batch crawl
-                if self.progress_tracker:
-                    await self.progress_tracker.update(
-                        status="crawling",
-                        progress=15,
-                        log=f"Starting batch crawl of {len(sitemap_urls)} URLs...",
-                        crawl_type=crawl_type,
-                        current_url=url
-                    )
+                await update_crawl_progress(
+                    75,  # 75% of crawling stage
+                    f"Starting batch crawl of {len(sitemap_urls)} URLs...",
+                    crawl_type=crawl_type
+                )
 
                 crawl_results = await self.crawl_batch_with_progress(
                     sitemap_urls,
                     progress_callback=await self._create_crawl_progress_callback("crawling"),
-                    start_progress=15,
-                    end_progress=20,
                 )
 
         else:
             # Handle regular webpages with recursive crawling
             crawl_type = "normal"
-            if self.progress_tracker:
-                await self.progress_tracker.update(
-                    status="crawling",
-                    progress=10,
-                    log=f"Starting recursive crawl with max depth {request.get('max_depth', 1)}...",
-                    crawl_type=crawl_type,
-                    current_url=url
-                )
+            await update_crawl_progress(
+                50,  # 50% of crawling stage
+                f"Starting recursive crawl with max depth {request.get('max_depth', 1)}...",
+                crawl_type=crawl_type
+            )
 
             max_depth = request.get("max_depth", 1)
             # Let the strategy handle concurrency from settings
@@ -800,8 +871,6 @@ class CrawlingService:
                 max_depth=max_depth,
                 max_concurrent=None,  # Let strategy use settings
                 progress_callback=await self._create_crawl_progress_callback("crawling"),
-                start_progress=3,  # Match ProgressMapper range for crawling
-                end_progress=8,    # Match ProgressMapper range for crawling
             )
 
         return crawl_results, crawl_type
