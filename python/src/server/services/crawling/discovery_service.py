@@ -64,24 +64,24 @@ class DiscoveryService:
 
             # Check files in global priority order
             for filename in self.DISCOVERY_PRIORITY:
-                # Try root location first
-                file_url = urljoin(base_url, f"/{filename}")
+                # Try location relative to the given URL
+                file_url = urljoin(base_url, filename)
                 if self._check_url_exists(file_url):
                     logger.info(f"Discovery found best file: {file_url}")
                     return file_url
-                
+
                 # For llms files, also try common subdirectories
                 if filename.startswith('llms'):
                     for subdir in ["static", "public", "docs", "assets", "doc", "api"]:
-                        subdir_url = urljoin(base_url, f"/{subdir}/{filename}")
+                        subdir_url = urljoin(base_url, f"{subdir}/{filename}")
                         if self._check_url_exists(subdir_url):
                             logger.info(f"Discovery found best file in subdirectory: {subdir_url}")
                             return subdir_url
-                
+
                 # For sitemap files, also try common subdirectories
                 if filename.endswith('.xml') and not filename.startswith('.well-known'):
                     for subdir in ["sitemaps", "sitemap", "xml", "feed"]:
-                        subdir_url = urljoin(base_url, f"/{subdir}/{filename}")
+                        subdir_url = urljoin(base_url, f"{subdir}/{filename}")
                         if self._check_url_exists(subdir_url):
                             logger.info(f"Discovery found best file in subdirectory: {subdir_url}")
                             return subdir_url
@@ -119,7 +119,7 @@ class DiscoveryService:
 
             # Priority 2: Check standard locations in priority order
             for filename in self.DISCOVERY_TARGETS["sitemap_files"]:
-                sitemap_url = urljoin(base_url, f"/{filename}")
+                sitemap_url = urljoin(base_url, filename)
                 if self._check_url_exists(sitemap_url):
                     return sitemap_url
 
@@ -127,7 +127,7 @@ class DiscoveryService:
             subdirs = ["sitemaps", "sitemap", "xml", "feed"]
             for subdir in subdirs:
                 for filename in self.DISCOVERY_TARGETS["sitemap_files"]:
-                    sitemap_url = urljoin(base_url, f"/{subdir}/{filename}")
+                    sitemap_url = urljoin(base_url, f"{subdir}/{filename}")
                     if self._check_url_exists(sitemap_url):
                         return sitemap_url
 
@@ -137,7 +137,7 @@ class DiscoveryService:
                 return html_sitemaps[0]  # Use first sitemap from HTML
 
             # Priority 5: Check .well-known directory
-            well_known_sitemap = urljoin(base_url, "/.well-known/sitemap.xml")
+            well_known_sitemap = urljoin(base_url, ".well-known/sitemap.xml")
             if self._check_url_exists(well_known_sitemap):
                 return well_known_sitemap
 
@@ -158,7 +158,7 @@ class DiscoveryService:
         try:
             # Priority 1: Check standard root locations in priority order
             for filename in self.DISCOVERY_TARGETS["llms_files"]:
-                llms_url = urljoin(base_url, f"/{filename}")
+                llms_url = urljoin(base_url, filename)
                 if self._check_url_exists(llms_url):
                     return llms_url
 
@@ -166,13 +166,13 @@ class DiscoveryService:
             subdirs = ["static", "public", "docs", "assets", "doc", "api"]
             for subdir in subdirs:
                 for filename in self.DISCOVERY_TARGETS["llms_files"]:
-                    llms_url = urljoin(base_url, f"/{subdir}/{filename}")
+                    llms_url = urljoin(base_url, f"{subdir}/{filename}")
                     if self._check_url_exists(llms_url):
                         return llms_url
 
             # Priority 3: Check .well-known directory variants
             for well_known_file in [".well-known/ai.txt", ".well-known/llms.txt"]:
-                well_known_url = urljoin(base_url, f"/{well_known_file}")
+                well_known_url = urljoin(base_url, well_known_file)
                 if self._check_url_exists(well_known_url):
                     return well_known_url
 
@@ -186,7 +186,7 @@ class DiscoveryService:
         Discover robots.txt file (always single file at root).
         """
         try:
-            robots_url = urljoin(base_url, "/robots.txt")
+            robots_url = urljoin(base_url, "robots.txt")
             if self._check_url_exists(robots_url):
                 return robots_url
         except Exception:
@@ -210,17 +210,18 @@ class DiscoveryService:
     def _parse_robots_txt(self, base_url: str) -> list[str]:
         """
         Extract sitemap URLs from robots.txt.
-        
+
         Args:
             base_url: Base URL to check robots.txt for
-            
+
         Returns:
             List of sitemap URLs found in robots.txt
         """
         sitemaps: list[str] = []
 
         try:
-            robots_url = urljoin(base_url, "/robots.txt")
+            # Use robots.txt relative to the given URL, not always root
+            robots_url = urljoin(base_url, "robots.txt")
             logger.info(f"Checking robots.txt at {robots_url}")
 
             resp = requests.get(robots_url, timeout=30)
@@ -272,7 +273,7 @@ class DiscoveryService:
 
             for target_type, filename in all_targets:
                 try:
-                    file_url = urljoin(base_url, f"/{filename}")
+                    file_url = urljoin(base_url, filename)
                     resp = requests.get(file_url, timeout=30, allow_redirects=True)
 
                     if resp.status_code == 200:
@@ -361,7 +362,7 @@ class DiscoveryService:
         try:
             for filename in self.DISCOVERY_TARGETS["well_known_files"]:
                 try:
-                    file_url = urljoin(base_url, f"/{filename}")
+                    file_url = urljoin(base_url, filename)
                     resp = requests.get(file_url, timeout=30, allow_redirects=True)
 
                     if resp.status_code == 200:
@@ -401,7 +402,7 @@ class DiscoveryService:
             for subdir in subdirs:
                 for llms_file in self.DISCOVERY_TARGETS["llms_files"]:
                     try:
-                        file_url = urljoin(base_url, f"/{subdir}/{llms_file}")
+                        file_url = urljoin(base_url, f"{subdir}/{llms_file}")
                         resp = requests.get(file_url, timeout=30, allow_redirects=True)
 
                         if resp.status_code == 200:
@@ -423,7 +424,7 @@ class DiscoveryService:
 
             for sitemap_path in sitemap_paths:
                 try:
-                    file_url = urljoin(base_url, f"/{sitemap_path}")
+                    file_url = urljoin(base_url, sitemap_path)
                     resp = requests.get(file_url, timeout=30, allow_redirects=True)
 
                     if resp.status_code == 200:

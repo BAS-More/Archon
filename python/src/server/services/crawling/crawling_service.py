@@ -202,8 +202,6 @@ class CrawlingService:
         urls: list[str],
         max_concurrent: int | None = None,
         progress_callback: Callable[[str, int, str], Awaitable[None]] | None = None,
-        start_progress: int = 15,
-        end_progress: int = 60,
     ) -> list[dict[str, Any]]:
         """Batch crawl multiple URLs in parallel."""
         return await self.batch_strategy.crawl_batch_with_progress(
@@ -212,8 +210,6 @@ class CrawlingService:
             self.site_config.is_documentation_site,
             max_concurrent,
             progress_callback,
-            start_progress,
-            end_progress,
             self._check_cancellation,  # Pass cancellation check
         )
 
@@ -223,8 +219,6 @@ class CrawlingService:
         max_depth: int = 3,
         max_concurrent: int | None = None,
         progress_callback: Callable[[str, int, str], Awaitable[None]] | None = None,
-        start_progress: int = 10,
-        end_progress: int = 60,
     ) -> list[dict[str, Any]]:
         """Recursively crawl internal links from start URLs."""
         return await self.recursive_strategy.crawl_recursive_with_progress(
@@ -234,8 +228,6 @@ class CrawlingService:
             max_depth,
             max_concurrent,
             progress_callback,
-            start_progress,
-            end_progress,
             self._check_cancellation,  # Pass cancellation check
         )
 
@@ -799,8 +791,6 @@ class CrawlingService:
                                 max_depth=max_depth - 1,  # Reduce depth since we're already 1 level deep
                                 max_concurrent=request.get('max_concurrent'),
                                 progress_callback=await self._create_crawl_progress_callback("crawling"),
-                                start_progress=10,
-                                end_progress=20,
                             )
                         else:
                             # Depth limit reached, just crawl the immediate links without following further
@@ -809,8 +799,6 @@ class CrawlingService:
                                 extracted_links,
                                 max_concurrent=request.get('max_concurrent'),
                                 progress_callback=await self._create_crawl_progress_callback("crawling"),
-                                start_progress=10,
-                                end_progress=20,
                             )
                     else:
                         # Use normal batch crawling for non-discovery targets
