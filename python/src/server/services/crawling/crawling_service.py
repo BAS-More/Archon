@@ -812,23 +812,23 @@ class CrawlingService:
                                 start_progress=10,
                                 end_progress=20,
                             )
-                        else:
-                            # Use normal batch crawling for non-discovery or when max_depth is 1
-                            logger.info(f"Crawling {len(extracted_links)} extracted links from {url}")
-                            batch_results = await self.crawl_batch_with_progress(
-                                extracted_links,
-                                max_concurrent=request.get('max_concurrent'),  # None -> use DB settings
-                                progress_callback=await self._create_crawl_progress_callback("crawling"),
-                            )
-
-                        # Combine original text file results with batch results
-                        crawl_results.extend(batch_results)
-                        crawl_type = "link_collection_with_crawled_links"
-
-                        logger.info(f"Link collection crawling completed: {len(crawl_results)} total results (1 text file + {len(batch_results)} extracted links)")
                     else:
-                        logger.info(f"No valid links found in link collection file: {url}")
-                        logger.info(f"Text file crawling completed: {len(crawl_results)} results")
+                        # Use normal batch crawling for non-discovery targets
+                        logger.info(f"Crawling {len(extracted_links)} extracted links from {url}")
+                        batch_results = await self.crawl_batch_with_progress(
+                            extracted_links,
+                            max_concurrent=request.get('max_concurrent'),  # None -> use DB settings
+                            progress_callback=await self._create_crawl_progress_callback("crawling"),
+                        )
+
+                    # Combine original text file results with batch results
+                    crawl_results.extend(batch_results)
+                    crawl_type = "link_collection_with_crawled_links"
+
+                    logger.info(f"Link collection crawling completed: {len(crawl_results)} total results (1 text file + {len(batch_results)} extracted links)")
+                else:
+                    logger.info(f"No valid links found in link collection file: {url}")
+                    logger.info(f"Text file crawling completed: {len(crawl_results)} results")
 
         elif self.url_handler.is_sitemap(url):
             # Handle sitemaps
