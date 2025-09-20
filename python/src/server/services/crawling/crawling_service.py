@@ -339,7 +339,19 @@ class CrawlingService:
 
             # Discovery phase - find the single best related file
             discovered_urls = []
-            if request.get("auto_discovery", True):  # Default enabled
+            # Skip discovery if the URL itself is already a discovery target (sitemap, llms file, etc.)
+            is_already_discovery_target = (
+                self.url_handler.is_sitemap(url) or
+                self.url_handler.is_llms_variant(url) or
+                self.url_handler.is_robots_txt(url) or
+                self.url_handler.is_well_known_file(url) or
+                self.url_handler.is_txt(url)  # Also skip for any .txt file that user provides directly
+            )
+
+            if is_already_discovery_target:
+                safe_logfire_info(f"Skipping discovery - URL is already a discovery target file: {url}")
+
+            if request.get("auto_discovery", True) and not is_already_discovery_target:  # Default enabled, but skip if already a discovery file
                 await update_mapped_progress(
                     "discovery", 25, f"Discovering best related file for {url}", current_url=url
                 )
