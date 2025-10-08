@@ -234,7 +234,78 @@ class WorkflowOrchestrator:
 
             bound_logger.info("step_completed", step="commit")
 
-            # Step 7: Create PR
+            # Step 7: Run tests (if enabled)
+            from ..config import config
+            if config.ENABLE_TEST_PHASE:
+                from .test_workflow import run_tests_with_resolution
+
+                bound_logger.info("test_phase_started")
+                test_results, passed_count, failed_count = await run_tests_with_resolution(
+                    self.agent_executor,
+                    self.command_loader,
+                    agent_work_order_id,
+                    sandbox.working_dir,
+                    bound_logger,
+                    max_attempts=config.MAX_TEST_RETRY_ATTEMPTS,
+                )
+
+                # Record test execution in step history
+                test_summary = f"Tests: {passed_count} passed, {failed_count} failed"
+                from ..models import StepExecutionResult
+                test_step = StepExecutionResult(
+                    step=WorkflowStep.TEST,
+                    agent_name="Tester",
+                    success=(failed_count == 0),
+                    output=test_summary,
+                    error_message=f"{failed_count} test(s) failed" if failed_count > 0 else None,
+                    duration_seconds=0,
+                )
+                step_history.steps.append(test_step)
+                await self.state_repository.save_step_history(agent_work_order_id, step_history)
+
+                if failed_count > 0:
+                    bound_logger.warning("test_phase_completed_with_failures", failed_count=failed_count)
+                else:
+                    bound_logger.info("test_phase_completed", passed_count=passed_count)
+
+            # Step 8: Run review (if enabled)
+            if config.ENABLE_REVIEW_PHASE:
+                from .review_workflow import run_review_with_resolution
+
+                # Determine spec file path from plan_file or default
+                spec_file = plan_file if plan_file else f"PRPs/specs/{issue_class}-spec.md"
+
+                bound_logger.info("review_phase_started", spec_file=spec_file)
+                review_result = await run_review_with_resolution(
+                    self.agent_executor,
+                    self.command_loader,
+                    spec_file,
+                    agent_work_order_id,
+                    sandbox.working_dir,
+                    bound_logger,
+                    max_attempts=config.MAX_REVIEW_RETRY_ATTEMPTS,
+                )
+
+                # Record review execution in step history
+                blocker_count = review_result.get_blocker_count()
+                review_summary = f"Review: {len(review_result.review_issues)} issues found, {blocker_count} blockers"
+                review_step = StepExecutionResult(
+                    step=WorkflowStep.REVIEW,
+                    agent_name="Reviewer",
+                    success=(blocker_count == 0),
+                    output=review_summary,
+                    error_message=f"{blocker_count} blocker(s) remaining" if blocker_count > 0 else None,
+                    duration_seconds=0,
+                )
+                step_history.steps.append(review_step)
+                await self.state_repository.save_step_history(agent_work_order_id, step_history)
+
+                if blocker_count > 0:
+                    bound_logger.warning("review_phase_completed_with_blockers", blocker_count=blocker_count)
+                else:
+                    bound_logger.info("review_phase_completed", issue_count=len(review_result.review_issues))
+
+            # Step 9: Create PR
             pr_result = await workflow_operations.create_pull_request(
                 self.agent_executor,
                 self.command_loader,

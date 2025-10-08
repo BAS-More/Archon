@@ -25,7 +25,7 @@ from ..models import (
     StepHistory,
 )
 from ..sandbox_manager.sandbox_factory import SandboxFactory
-from ..state_manager.work_order_repository import WorkOrderRepository
+from ..state_manager.repository_factory import create_repository
 from ..utils.id_generator import generate_work_order_id
 from ..utils.structured_logger import get_logger
 from ..workflow_engine.workflow_orchestrator import WorkflowOrchestrator
@@ -35,7 +35,7 @@ logger = get_logger(__name__)
 router = APIRouter()
 
 # Initialize dependencies (singletons for MVP)
-state_repository = WorkOrderRepository()
+state_repository = create_repository()
 agent_executor = AgentCLIExecutor()
 sandbox_factory = SandboxFactory()
 github_client = GitHubClient()

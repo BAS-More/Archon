@@ -18,6 +18,8 @@ from .agent_names import (
     PLAN_FINDER,
     PLANNER,
     PR_CREATOR,
+    REVIEWER,
+    TESTER,
 )
 
 logger = get_logger(__name__)
@@ -438,6 +440,230 @@ async def create_pull_request(
         return StepExecutionResult(
             step=WorkflowStep.CREATE_PR,
             agent_name=PR_CREATOR,
+            success=False,
+            error_message=str(e),
+            duration_seconds=duration,
+        )
+
+
+async def run_tests(
+    executor: AgentCLIExecutor,
+    command_loader: ClaudeCommandLoader,
+    work_order_id: str,
+    working_dir: str,
+) -> StepExecutionResult:
+    """Execute test suite
+
+    Returns: StepExecutionResult with test results summary
+    """
+    start_time = time.time()
+
+    try:
+        command_file = command_loader.load_command("test")
+
+        cli_command, prompt_text = executor.build_command(command_file, args=[])
+
+        result = await executor.execute_async(
+            cli_command, working_dir, prompt_text=prompt_text, work_order_id=work_order_id
+        )
+
+        duration = time.time() - start_time
+
+        if result.success:
+            return StepExecutionResult(
+                step=WorkflowStep.TEST,
+                agent_name=TESTER,
+                success=True,
+                output=result.result_text or "Tests passed",
+                duration_seconds=duration,
+                session_id=result.session_id,
+            )
+        else:
+            return StepExecutionResult(
+                step=WorkflowStep.TEST,
+                agent_name=TESTER,
+                success=False,
+                error_message=result.error_message or "Tests failed",
+                output=result.result_text,
+                duration_seconds=duration,
+            )
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error("run_tests_error", error=str(e), exc_info=True)
+        return StepExecutionResult(
+            step=WorkflowStep.TEST,
+            agent_name=TESTER,
+            success=False,
+            error_message=str(e),
+            duration_seconds=duration,
+        )
+
+
+async def resolve_test_failure(
+    executor: AgentCLIExecutor,
+    command_loader: ClaudeCommandLoader,
+    test_failure_json: str,
+    work_order_id: str,
+    working_dir: str,
+) -> StepExecutionResult:
+    """Resolve a failed test
+
+    Args:
+        test_failure_json: JSON string with test failure details
+
+    Returns: StepExecutionResult with resolution outcome
+    """
+    start_time = time.time()
+
+    try:
+        command_file = command_loader.load_command("resolve_failed_test")
+
+        cli_command, prompt_text = executor.build_command(command_file, args=[test_failure_json])
+
+        result = await executor.execute_async(
+            cli_command, working_dir, prompt_text=prompt_text, work_order_id=work_order_id
+        )
+
+        duration = time.time() - start_time
+
+        if result.success:
+            return StepExecutionResult(
+                step=WorkflowStep.RESOLVE_TEST,
+                agent_name=TESTER,
+                success=True,
+                output=result.result_text or "Test failure resolved",
+                duration_seconds=duration,
+                session_id=result.session_id,
+            )
+        else:
+            return StepExecutionResult(
+                step=WorkflowStep.RESOLVE_TEST,
+                agent_name=TESTER,
+                success=False,
+                error_message=result.error_message or "Resolution failed",
+                duration_seconds=duration,
+            )
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error("resolve_test_failure_error", error=str(e), exc_info=True)
+        return StepExecutionResult(
+            step=WorkflowStep.RESOLVE_TEST,
+            agent_name=TESTER,
+            success=False,
+            error_message=str(e),
+            duration_seconds=duration,
+        )
+
+
+async def run_review(
+    executor: AgentCLIExecutor,
+    command_loader: ClaudeCommandLoader,
+    spec_file: str,
+    work_order_id: str,
+    working_dir: str,
+) -> StepExecutionResult:
+    """Execute review against specification
+
+    Returns: StepExecutionResult with review results
+    """
+    start_time = time.time()
+
+    try:
+        command_file = command_loader.load_command("review_runner")
+
+        cli_command, prompt_text = executor.build_command(
+            command_file, args=[spec_file, work_order_id]
+        )
+
+        result = await executor.execute_async(
+            cli_command, working_dir, prompt_text=prompt_text, work_order_id=work_order_id
+        )
+
+        duration = time.time() - start_time
+
+        if result.success:
+            return StepExecutionResult(
+                step=WorkflowStep.REVIEW,
+                agent_name=REVIEWER,
+                success=True,
+                output=result.result_text or "Review completed",
+                duration_seconds=duration,
+                session_id=result.session_id,
+            )
+        else:
+            return StepExecutionResult(
+                step=WorkflowStep.REVIEW,
+                agent_name=REVIEWER,
+                success=False,
+                error_message=result.error_message or "Review failed",
+                duration_seconds=duration,
+            )
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error("run_review_error", error=str(e), exc_info=True)
+        return StepExecutionResult(
+            step=WorkflowStep.REVIEW,
+            agent_name=REVIEWER,
+            success=False,
+            error_message=str(e),
+            duration_seconds=duration,
+        )
+
+
+async def resolve_review_issue(
+    executor: AgentCLIExecutor,
+    command_loader: ClaudeCommandLoader,
+    review_issue_json: str,
+    work_order_id: str,
+    working_dir: str,
+) -> StepExecutionResult:
+    """Resolve a review blocker issue
+
+    Args:
+        review_issue_json: JSON string with review issue details
+
+    Returns: StepExecutionResult with resolution outcome
+    """
+    start_time = time.time()
+
+    try:
+        command_file = command_loader.load_command("resolve_failed_review")
+
+        cli_command, prompt_text = executor.build_command(command_file, args=[review_issue_json])
+
+        result = await executor.execute_async(
+            cli_command, working_dir, prompt_text=prompt_text, work_order_id=work_order_id
+        )
+
+        duration = time.time() - start_time
+
+        if result.success:
+            return StepExecutionResult(
+                step=WorkflowStep.RESOLVE_REVIEW,
+                agent_name=REVIEWER,
+                success=True,
+                output=result.result_text or "Review issue resolved",
+                duration_seconds=duration,
+                session_id=result.session_id,
+            )
+        else:
+            return StepExecutionResult(
+                step=WorkflowStep.RESOLVE_REVIEW,
+                agent_name=REVIEWER,
+                success=False,
+                error_message=result.error_message or "Resolution failed",
+                duration_seconds=duration,
+            )
+
+    except Exception as e:
+        duration = time.time() - start_time
+        logger.error("resolve_review_issue_error", error=str(e), exc_info=True)
+        return StepExecutionResult(
+            step=WorkflowStep.RESOLVE_REVIEW,
+            agent_name=REVIEWER,
             success=False,
             error_message=str(e),
             duration_seconds=duration,

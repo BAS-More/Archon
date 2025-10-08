@@ -20,6 +20,7 @@ IMPLEMENTOR = "implementor"  # Implements changes
 # Validate Phase
 CODE_REVIEWER = "code_reviewer"  # Reviews code quality
 TESTER = "tester"  # Runs tests
+REVIEWER = "reviewer"  # Reviews against spec
 
 # Git Operations (support all phases)
 BRANCH_GENERATOR = "branch_generator"  # Creates branches

@@ -49,8 +49,10 @@ class WorkflowStep(str, Enum):
     IMPLEMENT = "implement"
     GENERATE_BRANCH = "generate_branch"
     COMMIT = "commit"
-    REVIEW = "review"
     TEST = "test"
+    RESOLVE_TEST = "resolve_test"
+    REVIEW = "review"
+    RESOLVE_REVIEW = "resolve_review"
     CREATE_PR = "create_pr"
 
 
@@ -232,6 +234,8 @@ class StepHistory(BaseModel):
             WorkflowStep.GENERATE_BRANCH,
             WorkflowStep.IMPLEMENT,
             WorkflowStep.COMMIT,
+            WorkflowStep.TEST,
+            WorkflowStep.REVIEW,
             WorkflowStep.CREATE_PR,
         ]
 
