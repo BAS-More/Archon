@@ -163,6 +163,9 @@ wheels = [
 name = "archon"
 version = "0.1.0"
 source = { virtual = "." }
+dependencies = [
+    { name = "structlog" },
+]
 
 [package.dev-dependencies]
 agents = [
@@ -258,6 +261,7 @@ server-reranking = [
 ]
 
 [package.metadata]
+requires-dist = [{ name = "structlog", specifier = ">=25.4.0" }]
 
 [package.metadata.requires-dev]
 agents = [

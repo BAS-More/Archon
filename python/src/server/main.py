@@ -195,6 +195,11 @@ app.include_router(providers_router)
 app.include_router(version_router)
 app.include_router(migration_router)
 
+# Mount Agent Work Orders sub-application
+from src.agent_work_orders.main import app as agent_work_orders_app
+
+app.mount("/api/agent-work-orders", agent_work_orders_app)
+
 
 # Root endpoint
 @app.get("/")
