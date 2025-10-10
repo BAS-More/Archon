@@ -1065,8 +1065,8 @@ VALUES
   ('0.1.0', '007_add_priority_column_to_tasks'),
   ('0.1.0', '008_add_migration_tracking'),
   ('0.1.0', '009_add_cascade_delete_constraints'),
-  ('0.1.0', '009_add_provider_placeholders'),
-  ('0.1.0', '010_add_page_metadata_table')
+  ('0.1.0', '010_add_provider_placeholders'),
+  ('0.1.0', '011_add_page_metadata_table')
 ON CONFLICT (version, migration_name) DO NOTHING;
 
 -- Enable Row Level Security on migrations table
