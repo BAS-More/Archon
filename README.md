@@ -3,6 +3,10 @@
 </p>
 
 <p align="center">
+   <a href="https://trendshift.io/repositories/13964" target="_blank"><img src="https://trendshift.io/api/badge/repositories/13964" alt="coleam00%2FArchon | Trendshift" style="width: 250px; height: 55px;" width="250" height="55"/></a>
+</p>
+
+<p align="center">
   <em>Power up your AI coding assistants with your own custom knowledge base and task management as an MCP server</em>
 </p>
 
