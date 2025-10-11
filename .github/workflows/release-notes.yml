@@ -223,7 +223,7 @@ jobs:
           github_token: ${{ github.token }}
           mode: agent
 
-          custom_instructions: |
+          direct_prompt: |
             Read the file release-context.md which contains all the information about this release.
 
             Generate comprehensive release notes following the structure and instructions in that file.
