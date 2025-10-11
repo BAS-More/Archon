@@ -46,6 +46,16 @@ This new vision for Archon replaces the old one (the agenteer). Archon used to b
 
 ## Quick Start
 
+<p align="center">
+  <a href="https://youtu.be/DMXyDpnzNpY">
+    <img src="https://img.youtube.com/vi/DMXyDpnzNpY/maxresdefault.jpg" alt="Archon Setup Tutorial" width="640" />
+  </a>
+  <br/>
+  <em>📺 Click to watch the setup tutorial on YouTube</em>
+  <br/>
+  <a href="./archon-example-workflow">-> Example AI coding workflow in the video <-</a>
+</p>
+
 ### Prerequisites
 
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/)
