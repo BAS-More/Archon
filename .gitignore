@@ -5,6 +5,7 @@ __pycache__
 PRPs/local
 PRPs/completed/
 PRPs/stories/
+PRPs/reviews/
 /logs/
 .zed
 tmp/

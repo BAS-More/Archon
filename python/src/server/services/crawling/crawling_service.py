@@ -14,11 +14,13 @@ from typing import Any, Optional
 from ...config.logfire_config import get_logger, safe_logfire_error, safe_logfire_info
 from ...utils import get_supabase_client
 from ...utils.progress.progress_tracker import ProgressTracker
+from ..credential_service import credential_service
 
 # Import strategies
 # Import operations
 from .discovery_service import DiscoveryService
 from .document_storage_operations import DocumentStorageOperations
+from .page_storage_operations import PageStorageOperations
 from .helpers.site_config import SiteConfig
 
 # Import helpers
@@ -33,22 +35,35 @@ logger = get_logger(__name__)
 
 # Global registry to track active orchestration services for cancellation support
 _active_orchestrations: dict[str, "CrawlingService"] = {}
+_orchestration_lock: asyncio.Lock | None = None
 
 
-def get_active_orchestration(progress_id: str) -> Optional["CrawlingService"]:
+def _ensure_orchestration_lock() -> asyncio.Lock:
+    global _orchestration_lock
+    if _orchestration_lock is None:
+        _orchestration_lock = asyncio.Lock()
+    return _orchestration_lock
+
+
+async def get_active_orchestration(progress_id: str) -> Optional["CrawlingService"]:
     """Get an active orchestration service by progress ID."""
-    return _active_orchestrations.get(progress_id)
+    lock = _ensure_orchestration_lock()
+    async with lock:
+        return _active_orchestrations.get(progress_id)
 
 
-def register_orchestration(progress_id: str, orchestration: "CrawlingService"):
+async def register_orchestration(progress_id: str, orchestration: "CrawlingService"):
     """Register an active orchestration service."""
-    _active_orchestrations[progress_id] = orchestration
+    lock = _ensure_orchestration_lock()
+    async with lock:
+        _active_orchestrations[progress_id] = orchestration
 
 
-def unregister_orchestration(progress_id: str):
+async def unregister_orchestration(progress_id: str):
     """Unregister an orchestration service."""
-    if progress_id in _active_orchestrations:
-        del _active_orchestrations[progress_id]
+    lock = _ensure_orchestration_lock()
+    async with lock:
+        _active_orchestrations.pop(progress_id, None)
 
 
 class CrawlingService:
@@ -86,6 +101,7 @@ class CrawlingService:
         # Initialize operations
         self.doc_storage_ops = DocumentStorageOperations(self.supabase_client)
         self.discovery_service = DiscoveryService()
+        self.page_storage_ops = PageStorageOperations(self.supabase_client)
 
         # Track progress state across all stages to prevent UI resets
         self.progress_state = {"progressId": self.progress_id} if self.progress_id else {}
@@ -203,6 +219,7 @@ class CrawlingService:
         urls: list[str],
         max_concurrent: int | None = None,
         progress_callback: Callable[[str, int, str], Awaitable[None]] | None = None,
+        link_text_fallbacks: dict[str, str] | None = None,
     ) -> list[dict[str, Any]]:
         """Batch crawl multiple URLs in parallel."""
         return await self.batch_strategy.crawl_batch_with_progress(
@@ -212,6 +229,7 @@ class CrawlingService:
             max_concurrent,
             progress_callback,
             self._check_cancellation,  # Pass cancellation check
+            link_text_fallbacks,  # Pass link text fallbacks
         )
 
     async def crawl_recursive_with_progress(
@@ -251,7 +269,7 @@ class CrawlingService:
 
         # Register this orchestration service for cancellation support
         if self.progress_id:
-            register_orchestration(self.progress_id, self)
+            await register_orchestration(self.progress_id, self)
 
         # Start the crawl as an async task in the main event loop
         # Store the task reference for proper cancellation
@@ -494,6 +512,7 @@ class CrawlingService:
                 self._check_cancellation,
                 source_url=url,
                 source_display_name=source_display_name,
+                url_to_page_id=None,  # Will be populated after page storage
             )
 
             # Update progress tracker with source_id now that it's created
@@ -554,14 +573,26 @@ class CrawlingService:
                 try:
                     # Extract provider from request or use credential service default
                     provider = request.get("provider")
+                    embedding_provider = None
+
                     if not provider:
                         try:
-                            from ..credential_service import credential_service
                             provider_config = await credential_service.get_active_provider("llm")
                             provider = provider_config.get("provider", "openai")
                         except Exception as e:
-                            logger.warning(f"Failed to get provider from credential service: {e}, defaulting to openai")
+                            logger.warning(
+                                f"Failed to get provider from credential service: {e}, defaulting to openai"
+                            )
                             provider = "openai"
+
+                    try:
+                        embedding_config = await credential_service.get_active_provider("embedding")
+                        embedding_provider = embedding_config.get("provider")
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to get embedding provider from credential service: {e}. Using configured default."
+                        )
+                        embedding_provider = None
 
                     code_examples_count = await self.doc_storage_ops.extract_and_store_code_examples(
                         crawl_results,
@@ -570,6 +601,7 @@ class CrawlingService:
                         code_progress_callback,
                         self._check_cancellation,
                         provider,
+                        embedding_provider,
                     )
                 except RuntimeError as e:
                     # Code extraction failed, continue crawl with warning
@@ -625,7 +657,7 @@ class CrawlingService:
 
             # Unregister after successful completion
             if self.progress_id:
-                unregister_orchestration(self.progress_id)
+                await unregister_orchestration(self.progress_id)
                 safe_logfire_info(
                     f"Unregistered orchestration service after completion | progress_id={self.progress_id}"
                 )
@@ -644,7 +676,7 @@ class CrawlingService:
             )
             # Unregister on cancellation
             if self.progress_id:
-                unregister_orchestration(self.progress_id)
+                await unregister_orchestration(self.progress_id)
                 safe_logfire_info(
                     f"Unregistered orchestration service on cancellation | progress_id={self.progress_id}"
                 )
@@ -668,7 +700,7 @@ class CrawlingService:
                 await self.progress_tracker.error(error_message)
             # Unregister on error
             if self.progress_id:
-                unregister_orchestration(self.progress_id)
+                await unregister_orchestration(self.progress_id)
                 safe_logfire_info(
                     f"Unregistered orchestration service on error | progress_id={self.progress_id}"
                 )
@@ -773,45 +805,46 @@ class CrawlingService:
                         logger.info(f"Discovery file crawling completed: {len(crawl_results)} result")
                         return crawl_results, crawl_type
 
-                    # Extract links from the content for non-discovery files
-                    extracted_links = self.url_handler.extract_markdown_links(content, url)
+                    # Extract links WITH text from the content
+                    extracted_links_with_text = self.url_handler.extract_markdown_links_with_text(content, url)
 
                     # Filter out self-referential links to avoid redundant crawling
-                    if extracted_links:
-                        original_count = len(extracted_links)
-                        extracted_links = [
-                            link for link in extracted_links
+                    if extracted_links_with_text:
+                        original_count = len(extracted_links_with_text)
+                        extracted_links_with_text = [
+                            (link, text) for link, text in extracted_links_with_text
                             if not self._is_self_link(link, url)
                         ]
-                        self_filtered_count = original_count - len(extracted_links)
+                        self_filtered_count = original_count - len(extracted_links_with_text)
                         if self_filtered_count > 0:
                             logger.info(f"Filtered out {self_filtered_count} self-referential links from {original_count} extracted links")
 
                     # For discovery targets, only follow same-domain links
-                    if extracted_links and request.get("is_discovery_target"):
+                    if extracted_links_with_text and request.get("is_discovery_target"):
                         original_domain = request.get("original_domain")
                         if original_domain:
-                            original_count = len(extracted_links)
-                            extracted_links = [
-                                link for link in extracted_links
+                            original_count = len(extracted_links_with_text)
+                            extracted_links_with_text = [
+                                (link, text) for link, text in extracted_links_with_text
                                 if self._is_same_domain(link, original_domain)
                             ]
-                            domain_filtered_count = original_count - len(extracted_links)
+                            domain_filtered_count = original_count - len(extracted_links_with_text)
                             if domain_filtered_count > 0:
-                                safe_logfire_info(f"Discovery mode: filtered out {domain_filtered_count} external links, keeping {len(extracted_links)} same-domain links")
+                                safe_logfire_info(f"Discovery mode: filtered out {domain_filtered_count} external links, keeping {len(extracted_links_with_text)} same-domain links")
 
                     # Filter out binary files (PDFs, images, archives, etc.) to avoid wasteful crawling
-                    if extracted_links:
-                        original_count = len(extracted_links)
-                        extracted_links = [link for link in extracted_links if not self.url_handler.is_binary_file(link)]
-                        filtered_count = original_count - len(extracted_links)
+                    if extracted_links_with_text:
+                        original_count = len(extracted_links_with_text)
+                        extracted_links_with_text = [(link, text) for link, text in extracted_links_with_text if not self.url_handler.is_binary_file(link)]
+                        filtered_count = original_count - len(extracted_links_with_text)
                         if filtered_count > 0:
                             logger.info(f"Filtered out {filtered_count} binary files from {original_count} extracted links")
 
-                        # Deduplicate to reduce redundant work
-                        extracted_links = list(dict.fromkeys(extracted_links))
+                    if extracted_links_with_text:
+                        # Build mapping of URL -> link text for title fallback
+                        url_to_link_text = {link: text for link, text in extracted_links_with_text}
+                        extracted_links = [link for link, _ in extracted_links_with_text]
 
-                    if extracted_links:
                         # For discovery targets, respect max_depth for same-domain links
                         max_depth = request.get('max_depth', 2) if request.get("is_discovery_target") else request.get('max_depth', 1)
 
@@ -825,27 +858,20 @@ class CrawlingService:
                                 progress_callback=await self._create_crawl_progress_callback("crawling"),
                             )
                         else:
-                            # Depth limit reached, just crawl the immediate links without following further
-                            logger.info(f"Max depth reached, crawling {len(extracted_links)} links without further recursion")
+                            # Use normal batch crawling (with link text fallbacks)
+                            logger.info(f"Crawling {len(extracted_links)} extracted links from {url}")
                             batch_results = await self.crawl_batch_with_progress(
                                 extracted_links,
-                                max_concurrent=request.get('max_concurrent'),
+                                max_concurrent=request.get('max_concurrent'),  # None -> use DB settings
                                 progress_callback=await self._create_crawl_progress_callback("crawling"),
+                                link_text_fallbacks=url_to_link_text,  # Pass link text for title fallback
                             )
-                    else:
-                        # Use normal batch crawling for non-discovery targets
-                        logger.info(f"Crawling {len(extracted_links)} extracted links from {url}")
-                        batch_results = await self.crawl_batch_with_progress(
-                            extracted_links,
-                            max_concurrent=request.get('max_concurrent'),  # None -> use DB settings
-                            progress_callback=await self._create_crawl_progress_callback("crawling"),
-                        )
 
-                    # Combine original text file results with batch results
-                    crawl_results.extend(batch_results)
-                    crawl_type = "link_collection_with_crawled_links"
+                        # Combine original text file results with batch results
+                        crawl_results.extend(batch_results)
+                        crawl_type = "link_collection_with_crawled_links"
 
-                    logger.info(f"Link collection crawling completed: {len(crawl_results)} total results (1 text file + {len(batch_results)} extracted links)")
+                        logger.info(f"Link collection crawling completed: {len(crawl_results)} total results (1 text file + {len(batch_results)} extracted links)")
                 else:
                     logger.info(f"No valid links found in link collection file: {url}")
                     logger.info(f"Text file crawling completed: {len(crawl_results)} results")
