@@ -17,29 +17,108 @@ logger = get_logger(__name__)
 class DiscoveryService:
     """Service for discovering related files automatically during crawls."""
 
+    # Maximum response size to prevent memory exhaustion (10MB default)
+    MAX_RESPONSE_SIZE = 10 * 1024 * 1024  # 10 MB
+
     # Global priority order - select ONE best file from all categories
     # All these files contain similar AI/crawling guidance content
     DISCOVERY_PRIORITY = [
         # LLMs files (highest priority - most comprehensive AI guidance)
         "llms-full.txt",
-        "llms.txt", 
+        "llms.txt",
         "llms.md",
         "llms.mdx",
         "llms.markdown",
-        
-        # Sitemap files (structural crawling guidance)  
+
+        # Sitemap files (structural crawling guidance)
         "sitemap_index.xml",
         "sitemap-index.xml",
         "sitemap.xml",
-        
+
         # Robots file (basic crawling rules)
         "robots.txt",
-        
+
         # Well-known variants (alternative locations)
         ".well-known/ai.txt",
-        ".well-known/llms.txt", 
+        ".well-known/llms.txt",
         ".well-known/sitemap.xml"
     ]
+
+    # Categorized discovery targets for helper methods
+    # Maintains the same order and values as DISCOVERY_PRIORITY
+    DISCOVERY_TARGETS = {
+        "llms_files": [
+            "llms-full.txt",
+            "llms.txt",
+            "llms.md",
+            "llms.mdx",
+            "llms.markdown",
+        ],
+        "sitemap_files": [
+            "sitemap_index.xml",
+            "sitemap-index.xml",
+            "sitemap.xml",
+        ],
+        "robots_files": [
+            "robots.txt",
+        ],
+        "well_known_files": [
+            ".well-known/ai.txt",
+            ".well-known/llms.txt",
+            ".well-known/sitemap.xml",
+        ],
+    }
+
+    def _read_response_with_limit(self, response: requests.Response, url: str, max_size: int | None = None) -> str:
+        """
+        Read response content with size limit to prevent memory exhaustion.
+
+        Args:
+            response: The response object to read from
+            url: URL being read (for logging)
+            max_size: Maximum bytes to read (defaults to MAX_RESPONSE_SIZE)
+
+        Returns:
+            Response text content
+
+        Raises:
+            ValueError: If response exceeds size limit
+        """
+        if max_size is None:
+            max_size = self.MAX_RESPONSE_SIZE
+
+        try:
+            chunks = []
+            total_size = 0
+
+            # Read response in chunks to enforce size limit
+            for chunk in response.iter_content(chunk_size=8192, decode_unicode=False):
+                if chunk:
+                    total_size += len(chunk)
+                    if total_size > max_size:
+                        response.close()
+                        size_mb = max_size / (1024 * 1024)
+                        logger.warning(
+                            f"Response size exceeded limit of {size_mb:.1f}MB for {url}, "
+                            f"received {total_size / (1024 * 1024):.1f}MB"
+                        )
+                        raise ValueError(f"Response size exceeds {size_mb:.1f}MB limit")
+                    chunks.append(chunk)
+
+            # Decode the complete response
+            content_bytes = b''.join(chunks)
+            # Try to decode with the response encoding or fall back to utf-8
+            encoding = response.encoding or 'utf-8'
+            try:
+                return content_bytes.decode(encoding)
+            except UnicodeDecodeError:
+                # Fallback to utf-8 with error replacement
+                return content_bytes.decode('utf-8', errors='replace')
+
+        except Exception:
+            # Ensure response is closed on any error
+            response.close()
+            raise
 
     def discover_files(self, base_url: str) -> str | None:
         """
@@ -199,9 +278,10 @@ class DiscoveryService:
         Check if a URL exists and returns a successful response.
         """
         try:
-            resp = requests.get(url, timeout=5, allow_redirects=True)
+            resp = requests.get(url, timeout=5, allow_redirects=True, verify=True)
             success = resp.status_code == 200
             logger.debug(f"URL check: {url} -> {resp.status_code} ({'exists' if success else 'not found'})")
+            resp.close()
             return success
         except Exception as e:
             logger.debug(f"URL check failed: {url} -> {e}")
@@ -224,24 +304,35 @@ class DiscoveryService:
             robots_url = urljoin(base_url, "robots.txt")
             logger.info(f"Checking robots.txt at {robots_url}")
 
-            resp = requests.get(robots_url, timeout=30)
+            resp = requests.get(robots_url, timeout=30, stream=True, verify=True)
 
-            if resp.status_code != 200:
-                logger.info(f"No robots.txt found: HTTP {resp.status_code}")
-                return sitemaps
+            try:
+                if resp.status_code != 200:
+                    logger.info(f"No robots.txt found: HTTP {resp.status_code}")
+                    return sitemaps
 
-            # Parse robots.txt content for sitemap directives
-            for line in resp.text.splitlines():
-                line = line.strip().lower()
-                if line.startswith("sitemap:"):
-                    sitemap_url = line.split(":", 1)[1].strip()
-                    # Validate URL format before adding
-                    if sitemap_url and (sitemap_url.startswith('http://') or sitemap_url.startswith('https://')):
-                        sitemaps.append(sitemap_url)
-                        logger.info(f"Found sitemap in robots.txt: {sitemap_url}")
+                # Read response with size limit
+                content = self._read_response_with_limit(resp, robots_url)
+
+                # Parse robots.txt content for sitemap directives
+                for line in content.splitlines():
+                    line = line.strip().lower()
+                    if line.startswith("sitemap:"):
+                        sitemap_url = line.split(":", 1)[1].strip()
+                        # Validate URL format before adding
+                        if sitemap_url and (sitemap_url.startswith('http://') or sitemap_url.startswith('https://')):
+                            sitemaps.append(sitemap_url)
+                            logger.info(f"Found sitemap in robots.txt: {sitemap_url}")
+
+            finally:
+                # Ensure response is always closed
+                resp.close()
 
         except requests.exceptions.RequestException:
             logger.exception(f"Network error fetching robots.txt from {base_url}")
+        except ValueError as e:
+            # Size limit exceeded
+            logger.warning(f"robots.txt too large at {base_url}: {e}")
         except Exception:
             logger.exception(f"Unexpected error parsing robots.txt from {base_url}")
 
@@ -274,18 +365,22 @@ class DiscoveryService:
             for target_type, filename in all_targets:
                 try:
                     file_url = urljoin(base_url, filename)
-                    resp = requests.get(file_url, timeout=30, allow_redirects=True)
+                    resp = requests.get(file_url, timeout=30, allow_redirects=True, stream=True, verify=True)
 
-                    if resp.status_code == 200:
-                        # Map target type to discovery category
-                        if target_type == "sitemap_files":
-                            discovered["sitemaps"].append(file_url)
-                        elif target_type == "llms_files":
-                            discovered["llms_files"].append(file_url)
-                        elif target_type == "robots_files":
-                            discovered["robots_files"].append(file_url)
+                    try:
+                        if resp.status_code == 200:
+                            # Map target type to discovery category
+                            if target_type == "sitemap_files":
+                                discovered["sitemaps"].append(file_url)
+                            elif target_type == "llms_files":
+                                discovered["llms_files"].append(file_url)
+                            elif target_type == "robots_files":
+                                discovered["robots_files"].append(file_url)
 
-                        logger.info(f"Found {target_type} file: {file_url}")
+                            logger.info(f"Found {target_type} file: {file_url}")
+
+                    finally:
+                        resp.close()
 
                 except requests.exceptions.RequestException:
                     logger.debug(f"File not found or network error: {filename}")
@@ -311,37 +406,46 @@ class DiscoveryService:
 
         try:
             logger.info(f"Checking HTML meta tags for sitemaps at {base_url}")
-            resp = requests.get(base_url, timeout=30)
+            resp = requests.get(base_url, timeout=30, stream=True, verify=True)
 
-            if resp.status_code != 200:
-                logger.debug(f"Could not fetch HTML for meta tag parsing: HTTP {resp.status_code}")
-                return sitemaps
+            try:
+                if resp.status_code != 200:
+                    logger.debug(f"Could not fetch HTML for meta tag parsing: HTTP {resp.status_code}")
+                    return sitemaps
 
-            content = resp.text.lower()
+                # Read response with size limit
+                content = self._read_response_with_limit(resp, base_url)
+                content = content.lower()
 
-            # Look for sitemap meta tags or link elements
-            import re
+                # Look for sitemap meta tags or link elements
+                import re
 
-            # Check for <link rel="sitemap" href="...">
-            sitemap_link_pattern = r'<link[^>]*rel=["\']sitemap["\'][^>]*href=["\']([^"\']+)["\']'
-            matches = re.findall(sitemap_link_pattern, content)
+                # Check for <link rel="sitemap" href="...">
+                sitemap_link_pattern = r'<link[^>]*rel=["\']sitemap["\'][^>]*href=["\']([^"\']+)["\']'
+                matches = re.findall(sitemap_link_pattern, content)
 
-            for match in matches:
-                sitemap_url = urljoin(base_url, match)
-                sitemaps.append(sitemap_url)
-                logger.info(f"Found sitemap in HTML link tag: {sitemap_url}")
+                for match in matches:
+                    sitemap_url = urljoin(base_url, match)
+                    sitemaps.append(sitemap_url)
+                    logger.info(f"Found sitemap in HTML link tag: {sitemap_url}")
 
-            # Check for <meta name="sitemap" content="...">
-            sitemap_meta_pattern = r'<meta[^>]*name=["\']sitemap["\'][^>]*content=["\']([^"\']+)["\']'
-            matches = re.findall(sitemap_meta_pattern, content)
+                # Check for <meta name="sitemap" content="...">
+                sitemap_meta_pattern = r'<meta[^>]*name=["\']sitemap["\'][^>]*content=["\']([^"\']+)["\']'
+                matches = re.findall(sitemap_meta_pattern, content)
 
-            for match in matches:
-                sitemap_url = urljoin(base_url, match)
-                sitemaps.append(sitemap_url)
-                logger.info(f"Found sitemap in HTML meta tag: {sitemap_url}")
+                for match in matches:
+                    sitemap_url = urljoin(base_url, match)
+                    sitemaps.append(sitemap_url)
+                    logger.info(f"Found sitemap in HTML meta tag: {sitemap_url}")
+
+            finally:
+                resp.close()
 
         except requests.exceptions.RequestException:
             logger.exception(f"Network error fetching HTML from {base_url}")
+        except ValueError as e:
+            # Size limit exceeded
+            logger.warning(f"HTML response too large at {base_url}: {e}")
         except Exception:
             logger.exception(f"Unexpected error parsing HTML meta tags from {base_url}")
 
@@ -363,11 +467,15 @@ class DiscoveryService:
             for filename in self.DISCOVERY_TARGETS["well_known_files"]:
                 try:
                     file_url = urljoin(base_url, filename)
-                    resp = requests.get(file_url, timeout=30, allow_redirects=True)
+                    resp = requests.get(file_url, timeout=30, allow_redirects=True, stream=True, verify=True)
 
-                    if resp.status_code == 200:
-                        well_known_files.append(file_url)
-                        logger.info(f"Found .well-known file: {file_url}")
+                    try:
+                        if resp.status_code == 200:
+                            well_known_files.append(file_url)
+                            logger.info(f"Found .well-known file: {file_url}")
+
+                    finally:
+                        resp.close()
 
                 except requests.exceptions.RequestException:
                     logger.debug(f"Well-known file not found or network error: {filename}")
@@ -403,11 +511,15 @@ class DiscoveryService:
                 for llms_file in self.DISCOVERY_TARGETS["llms_files"]:
                     try:
                         file_url = urljoin(base_url, f"{subdir}/{llms_file}")
-                        resp = requests.get(file_url, timeout=30, allow_redirects=True)
+                        resp = requests.get(file_url, timeout=30, allow_redirects=True, stream=True, verify=True)
 
-                        if resp.status_code == 200:
-                            discovered["llms_files"].append(file_url)
-                            logger.info(f"Found llms file variant: {file_url}")
+                        try:
+                            if resp.status_code == 200:
+                                discovered["llms_files"].append(file_url)
+                                logger.info(f"Found llms file variant: {file_url}")
+
+                        finally:
+                            resp.close()
 
                     except requests.exceptions.RequestException:
                         logger.debug(f"Variant not found: {subdir}/{llms_file}")
@@ -425,11 +537,15 @@ class DiscoveryService:
             for sitemap_path in sitemap_paths:
                 try:
                     file_url = urljoin(base_url, sitemap_path)
-                    resp = requests.get(file_url, timeout=30, allow_redirects=True)
+                    resp = requests.get(file_url, timeout=30, allow_redirects=True, stream=True, verify=True)
 
-                    if resp.status_code == 200:
-                        discovered["sitemaps"].append(file_url)
-                        logger.info(f"Found sitemap variant: {file_url}")
+                    try:
+                        if resp.status_code == 200:
+                            discovered["sitemaps"].append(file_url)
+                            logger.info(f"Found sitemap variant: {file_url}")
+
+                    finally:
+                        resp.close()
 
                 except requests.exceptions.RequestException:
                     logger.debug(f"Sitemap variant not found: {sitemap_path}")

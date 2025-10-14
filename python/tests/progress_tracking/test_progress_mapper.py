@@ -265,10 +265,10 @@ class TestProgressMapper:
         # Code extraction (longest phase)
         assert mapper.map_progress("code_extraction", 0) == 40
         progress_25 = mapper.map_progress("code_extraction", 25)
-        assert progress_25 in [52, 53]  # 40 + (25% of 50) = 52.5, could round to 52 or 53
+        assert progress_25 in [52, 53]  # 40 + (25% of 50) = 52.5, banker's rounding rounds to 52 (even)
         assert mapper.map_progress("code_extraction", 50) == 65  # 40 + (50% of 50) = 65
         progress_75 = mapper.map_progress("code_extraction", 75)
-        assert progress_75 in [77, 78]  # 40 + (75% of 50) = 77.5, could round to 77 or 78
+        assert progress_75 == 78  # 40 + (75% of 50) = 77.5 -> 78 (rounds to even per banker's rounding)
         assert mapper.map_progress("code_extraction", 100) == 90
 
         # Finalization

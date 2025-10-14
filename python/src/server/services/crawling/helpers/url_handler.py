@@ -6,6 +6,7 @@ Handles URL transformations and validations.
 
 import hashlib
 import re
+from typing import List, Optional
 from urllib.parse import urljoin, urlparse
 
 from ....config.logfire_config import get_logger
