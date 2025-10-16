@@ -309,15 +309,15 @@ def test_get_agent_work_order_steps():
         agent_work_order_id="wo-test123",
         steps=[
             StepExecutionResult(
-                step=WorkflowStep.CLASSIFY,
-                agent_name="classifier",
+                step=WorkflowStep.CREATE_BRANCH,
+                agent_name="BranchCreator",
                 success=True,
-                output="/feature",
+                output="feat/test-feature",
                 duration_seconds=1.0,
             ),
             StepExecutionResult(
-                step=WorkflowStep.PLAN,
-                agent_name="planner",
+                step=WorkflowStep.PLANNING,
+                agent_name="Planner",
                 success=True,
                 output="Plan created",
                 duration_seconds=5.0,
@@ -334,11 +334,11 @@ def test_get_agent_work_order_steps():
         data = response.json()
         assert data["agent_work_order_id"] == "wo-test123"
         assert len(data["steps"]) == 2
-        assert data["steps"][0]["step"] == "classify"
-        assert data["steps"][0]["agent_name"] == "classifier"
+        assert data["steps"][0]["step"] == "create-branch"
+        assert data["steps"][0]["agent_name"] == "BranchCreator"
         assert data["steps"][0]["success"] is True
-        assert data["steps"][1]["step"] == "plan"
-        assert data["steps"][1]["agent_name"] == "planner"
+        assert data["steps"][1]["step"] == "planning"
+        assert data["steps"][1]["agent_name"] == "Planner"
 
 
 def test_get_agent_work_order_steps_not_found():

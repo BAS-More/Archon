@@ -185,13 +185,6 @@ def test_sandbox_factory_not_implemented():
 
     with pytest.raises(NotImplementedError):
         factory.create_sandbox(
-            sandbox_type=SandboxType.GIT_WORKTREE,
-            repository_url="https://github.com/owner/repo",
-            sandbox_identifier="sandbox-test",
-        )
-
-    with pytest.raises(NotImplementedError):
-        factory.create_sandbox(
             sandbox_type=SandboxType.E2B,
             repository_url="https://github.com/owner/repo",
             sandbox_identifier="sandbox-test",

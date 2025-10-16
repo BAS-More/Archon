@@ -243,16 +243,16 @@ async def test_save_and_get_step_history():
     repo = WorkOrderRepository()
 
     step1 = StepExecutionResult(
-        step=WorkflowStep.CLASSIFY,
-        agent_name="classifier",
+        step=WorkflowStep.CREATE_BRANCH,
+        agent_name="BranchCreator",
         success=True,
-        output="/feature",
+        output="feat/test-feature",
         duration_seconds=1.0,
     )
 
     step2 = StepExecutionResult(
-        step=WorkflowStep.PLAN,
-        agent_name="planner",
+        step=WorkflowStep.PLANNING,
+        agent_name="Planner",
         success=True,
         output="Plan created",
         duration_seconds=5.0,
@@ -266,8 +266,8 @@ async def test_save_and_get_step_history():
     assert retrieved is not None
     assert retrieved.agent_work_order_id == "wo-test123"
     assert len(retrieved.steps) == 2
-    assert retrieved.steps[0].step == WorkflowStep.CLASSIFY
-    assert retrieved.steps[1].step == WorkflowStep.PLAN
+    assert retrieved.steps[0].step == WorkflowStep.CREATE_BRANCH
+    assert retrieved.steps[1].step == WorkflowStep.PLANNING
 
 
 @pytest.mark.asyncio
@@ -286,10 +286,10 @@ async def test_update_step_history():
 
     # Initial history
     step1 = StepExecutionResult(
-        step=WorkflowStep.CLASSIFY,
-        agent_name="classifier",
+        step=WorkflowStep.CREATE_BRANCH,
+        agent_name="BranchCreator",
         success=True,
-        output="/feature",
+        output="feat/test-feature",
         duration_seconds=1.0,
     )
 
@@ -298,8 +298,8 @@ async def test_update_step_history():
 
     # Add more steps
     step2 = StepExecutionResult(
-        step=WorkflowStep.PLAN,
-        agent_name="planner",
+        step=WorkflowStep.PLANNING,
+        agent_name="Planner",
         success=True,
         output="Plan created",
         duration_seconds=5.0,

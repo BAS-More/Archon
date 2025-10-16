@@ -191,15 +191,14 @@ async def test_execute_workflow_stop_on_failure(mock_dependencies):
             duration_seconds=5.0,
         )
 
-        # Execute workflow - should stop at planning
-        with pytest.raises(WorkflowExecutionError, match="Planning failed"):
-            await orchestrator.execute_workflow(
-                agent_work_order_id="wo-test",
-                repository_url="https://github.com/owner/repo",
-                sandbox_type=SandboxType.GIT_BRANCH,
-                user_request="Test feature",
-                selected_commands=["create-branch", "planning", "execute"],
-            )
+        # Execute workflow - should stop at planning and save error to state
+        await orchestrator.execute_workflow(
+            agent_work_order_id="wo-test",
+            repository_url="https://github.com/owner/repo",
+            sandbox_type=SandboxType.GIT_BRANCH,
+            user_request="Test feature",
+            selected_commands=["create-branch", "planning", "execute"],
+        )
 
         # Verify only first 2 commands executed, not the third
         assert mock_branch.called
@@ -334,17 +333,24 @@ async def test_execute_workflow_updates_pr_url(mock_dependencies):
 
 @pytest.mark.asyncio
 async def test_execute_workflow_unknown_command(mock_dependencies):
-    """Test that unknown commands raise error"""
+    """Test that unknown commands save error to state"""
     orchestrator, mocks = mock_dependencies
 
-    with pytest.raises(WorkflowExecutionError, match="Unknown command"):
-        await orchestrator.execute_workflow(
-            agent_work_order_id="wo-test",
-            repository_url="https://github.com/owner/repo",
-            sandbox_type=SandboxType.GIT_BRANCH,
-            user_request="Test feature",
-            selected_commands=["invalid-command"],
-        )
+    await orchestrator.execute_workflow(
+        agent_work_order_id="wo-test",
+        repository_url="https://github.com/owner/repo",
+        sandbox_type=SandboxType.GIT_BRANCH,
+        user_request="Test feature",
+        selected_commands=["invalid-command"],
+    )
+
+    # Verify error was saved to state
+    status_calls = [call for call in mocks["state_repository"].update_status.call_args_list
+                   if call[0][1] == AgentWorkOrderStatus.FAILED]
+    assert len(status_calls) > 0
+    # Check that error message contains "Unknown command"
+    error_messages = [call.kwargs.get("error_message", "") for call in status_calls]
+    assert any("Unknown command" in msg for msg in error_messages)
 
 
 @pytest.mark.asyncio
@@ -362,14 +368,13 @@ async def test_execute_workflow_sandbox_cleanup(mock_dependencies):
             duration_seconds=1.0,
         )
 
-        with pytest.raises(WorkflowExecutionError):
-            await orchestrator.execute_workflow(
-                agent_work_order_id="wo-test",
-                repository_url="https://github.com/owner/repo",
-                sandbox_type=SandboxType.GIT_BRANCH,
-                user_request="Test feature",
-                selected_commands=["create-branch"],
-            )
+        await orchestrator.execute_workflow(
+            agent_work_order_id="wo-test",
+            repository_url="https://github.com/owner/repo",
+            sandbox_type=SandboxType.GIT_BRANCH,
+            user_request="Test feature",
+            selected_commands=["create-branch"],
+        )
 
-        # Verify sandbox cleanup was called
+        # Verify sandbox cleanup was called even on failure
         assert mocks["sandbox"].cleanup.called
