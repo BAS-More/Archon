@@ -72,7 +72,6 @@ def test_agent_work_order_creation():
         sandbox_identifier="sandbox-wo-test123",
         git_branch_name="feat-wo-test123",
         agent_session_id="session-123",
-        workflow_type=AgentWorkflowType.PLAN,
         sandbox_type=SandboxType.GIT_BRANCH,
         github_issue_number="42",
         status=AgentWorkOrderStatus.RUNNING,
@@ -86,7 +85,7 @@ def test_agent_work_order_creation():
     )
 
     assert work_order.agent_work_order_id == "wo-test123"
-    assert work_order.workflow_type == AgentWorkflowType.PLAN
+    assert work_order.sandbox_type == SandboxType.GIT_BRANCH
     assert work_order.status == AgentWorkOrderStatus.RUNNING
     assert work_order.current_phase == AgentWorkflowPhase.PLANNING
 
@@ -96,16 +95,15 @@ def test_create_agent_work_order_request():
     request = CreateAgentWorkOrderRequest(
         repository_url="https://github.com/owner/repo",
         sandbox_type=SandboxType.GIT_BRANCH,
-        workflow_type=AgentWorkflowType.PLAN,
         user_request="Add user authentication feature",
         github_issue_number="42",
     )
 
     assert request.repository_url == "https://github.com/owner/repo"
     assert request.sandbox_type == SandboxType.GIT_BRANCH
-    assert request.workflow_type == AgentWorkflowType.PLAN
     assert request.user_request == "Add user authentication feature"
     assert request.github_issue_number == "42"
+    assert request.selected_commands == ["create-branch", "planning", "execute", "commit", "create-pr"]
 
 
 def test_create_agent_work_order_request_optional_fields():
@@ -113,12 +111,12 @@ def test_create_agent_work_order_request_optional_fields():
     request = CreateAgentWorkOrderRequest(
         repository_url="https://github.com/owner/repo",
         sandbox_type=SandboxType.GIT_BRANCH,
-        workflow_type=AgentWorkflowType.PLAN,
         user_request="Fix the login bug",
     )
 
     assert request.user_request == "Fix the login bug"
     assert request.github_issue_number is None
+    assert request.selected_commands == ["create-branch", "planning", "execute", "commit", "create-pr"]
 
 
 def test_create_agent_work_order_request_with_user_request():
@@ -126,13 +124,13 @@ def test_create_agent_work_order_request_with_user_request():
     request = CreateAgentWorkOrderRequest(
         repository_url="https://github.com/owner/repo",
         sandbox_type=SandboxType.GIT_BRANCH,
-        workflow_type=AgentWorkflowType.PLAN,
         user_request="Add user authentication with JWT tokens",
     )
 
     assert request.user_request == "Add user authentication with JWT tokens"
     assert request.repository_url == "https://github.com/owner/repo"
     assert request.github_issue_number is None
+    assert request.selected_commands == ["create-branch", "planning", "execute", "commit", "create-pr"]
 
 
 def test_create_agent_work_order_request_with_github_issue():
@@ -140,43 +138,40 @@ def test_create_agent_work_order_request_with_github_issue():
     request = CreateAgentWorkOrderRequest(
         repository_url="https://github.com/owner/repo",
         sandbox_type=SandboxType.GIT_BRANCH,
-        workflow_type=AgentWorkflowType.PLAN,
         user_request="Implement the feature described in issue #42",
         github_issue_number="42",
     )
 
     assert request.user_request == "Implement the feature described in issue #42"
     assert request.github_issue_number == "42"
+    assert request.selected_commands == ["create-branch", "planning", "execute", "commit", "create-pr"]
 
 
 def test_workflow_step_enum():
     """Test WorkflowStep enum values"""
-    assert WorkflowStep.CLASSIFY.value == "classify"
-    assert WorkflowStep.PLAN.value == "plan"
-    assert WorkflowStep.FIND_PLAN.value == "find_plan"
-    assert WorkflowStep.IMPLEMENT.value == "implement"
-    assert WorkflowStep.GENERATE_BRANCH.value == "generate_branch"
+    assert WorkflowStep.CREATE_BRANCH.value == "create-branch"
+    assert WorkflowStep.PLANNING.value == "planning"
+    assert WorkflowStep.EXECUTE.value == "execute"
     assert WorkflowStep.COMMIT.value == "commit"
-    assert WorkflowStep.REVIEW.value == "review"
-    assert WorkflowStep.TEST.value == "test"
-    assert WorkflowStep.CREATE_PR.value == "create_pr"
+    assert WorkflowStep.CREATE_PR.value == "create-pr"
+    assert WorkflowStep.REVIEW.value == "prp-review"
 
 
 def test_step_execution_result_success():
     """Test creating successful StepExecutionResult"""
     result = StepExecutionResult(
-        step=WorkflowStep.CLASSIFY,
-        agent_name="classifier",
+        step=WorkflowStep.CREATE_BRANCH,
+        agent_name="BranchCreator",
         success=True,
-        output="/feature",
+        output="feat/add-feature",
         duration_seconds=1.5,
         session_id="session-123",
     )
 
-    assert result.step == WorkflowStep.CLASSIFY
-    assert result.agent_name == "classifier"
+    assert result.step == WorkflowStep.CREATE_BRANCH
+    assert result.agent_name == "BranchCreator"
     assert result.success is True
-    assert result.output == "/feature"
+    assert result.output == "feat/add-feature"
     assert result.error_message is None
     assert result.duration_seconds == 1.5
     assert result.session_id == "session-123"
@@ -186,15 +181,15 @@ def test_step_execution_result_success():
 def test_step_execution_result_failure():
     """Test creating failed StepExecutionResult"""
     result = StepExecutionResult(
-        step=WorkflowStep.PLAN,
-        agent_name="planner",
+        step=WorkflowStep.PLANNING,
+        agent_name="Planner",
         success=False,
         error_message="Planning failed: timeout",
         duration_seconds=30.0,
     )
 
-    assert result.step == WorkflowStep.PLAN
-    assert result.agent_name == "planner"
+    assert result.step == WorkflowStep.PLANNING
+    assert result.agent_name == "Planner"
     assert result.success is False
     assert result.output is None
     assert result.error_message == "Planning failed: timeout"
@@ -213,18 +208,18 @@ def test_step_history_creation():
 def test_step_history_with_steps():
     """Test StepHistory with multiple steps"""
     step1 = StepExecutionResult(
-        step=WorkflowStep.CLASSIFY,
-        agent_name="classifier",
+        step=WorkflowStep.CREATE_BRANCH,
+        agent_name="BranchCreator",
         success=True,
-        output="/feature",
+        output="feat/add-feature",
         duration_seconds=1.0,
     )
 
     step2 = StepExecutionResult(
-        step=WorkflowStep.PLAN,
-        agent_name="planner",
+        step=WorkflowStep.PLANNING,
+        agent_name="Planner",
         success=True,
-        output="Plan created",
+        output="PRPs/features/add-feature.md",
         duration_seconds=5.0,
     )
 
@@ -232,22 +227,22 @@ def test_step_history_with_steps():
 
     assert history.agent_work_order_id == "wo-test123"
     assert len(history.steps) == 2
-    assert history.steps[0].step == WorkflowStep.CLASSIFY
-    assert history.steps[1].step == WorkflowStep.PLAN
+    assert history.steps[0].step == WorkflowStep.CREATE_BRANCH
+    assert history.steps[1].step == WorkflowStep.PLANNING
 
 
 def test_step_history_get_current_step_initial():
-    """Test get_current_step returns CLASSIFY when no steps"""
+    """Test get_current_step returns CREATE_BRANCH when no steps"""
     history = StepHistory(agent_work_order_id="wo-test123", steps=[])
 
-    assert history.get_current_step() == WorkflowStep.CLASSIFY
+    assert history.get_current_step() == WorkflowStep.CREATE_BRANCH
 
 
 def test_step_history_get_current_step_retry_failed():
     """Test get_current_step returns same step when failed"""
     failed_step = StepExecutionResult(
-        step=WorkflowStep.PLAN,
-        agent_name="planner",
+        step=WorkflowStep.PLANNING,
+        agent_name="Planner",
         success=False,
         error_message="Planning failed",
         duration_seconds=5.0,
@@ -255,22 +250,22 @@ def test_step_history_get_current_step_retry_failed():
 
     history = StepHistory(agent_work_order_id="wo-test123", steps=[failed_step])
 
-    assert history.get_current_step() == WorkflowStep.PLAN
+    assert history.get_current_step() == WorkflowStep.PLANNING
 
 
 def test_step_history_get_current_step_next():
     """Test get_current_step returns next step after success"""
-    classify_step = StepExecutionResult(
-        step=WorkflowStep.CLASSIFY,
-        agent_name="classifier",
+    branch_step = StepExecutionResult(
+        step=WorkflowStep.CREATE_BRANCH,
+        agent_name="BranchCreator",
         success=True,
-        output="/feature",
+        output="feat/add-feature",
         duration_seconds=1.0,
     )
 
-    history = StepHistory(agent_work_order_id="wo-test123", steps=[classify_step])
+    history = StepHistory(agent_work_order_id="wo-test123", steps=[branch_step])
 
-    assert history.get_current_step() == WorkflowStep.PLAN
+    assert history.get_current_step() == WorkflowStep.PLANNING
 
 
 def test_command_execution_result_with_result_text():

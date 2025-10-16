@@ -47,9 +47,35 @@ Specific files (skip if not specified):
 2. Check status: `git status`
 3. Stage changes: `git add -A`
 4. Create commit: `git commit -m "<type>: <description>"`
+5. Push to remote: `git push -u origin $(git branch --show-current)`
+6. Verify push: `git log origin/$(git branch --show-current) -1 --oneline`
 
 ## Report
 
-- Output the commit message used
-- Confirm commit was successful with commit hash
-- List files that were committed
+Output in this format (plain text, no markdown):
+
+Commit: <commit-hash>
+Branch: <branch-name>
+Message: <commit-message>
+Pushed: Yes (or No if push failed)
+Files: <number> files changed
+
+Then list the files:
+- <file1>
+- <file2>
+- ...
+
+**Example:**
+```
+Commit: a3c2f1e
+Branch: feat/add-user-auth
+Message: feat: add user authentication system
+Pushed: Yes
+Files: 5 files changed
+
+- src/auth/login.py
+- src/auth/middleware.py
+- tests/auth/test_login.py
+- CLAUDE.md
+- requirements.txt
+```

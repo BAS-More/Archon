@@ -29,7 +29,6 @@ from ..state_manager.repository_factory import create_repository
 from ..utils.id_generator import generate_work_order_id
 from ..utils.structured_logger import get_logger
 from ..workflow_engine.workflow_orchestrator import WorkflowOrchestrator
-from ..workflow_engine.workflow_phase_tracker import WorkflowPhaseTracker
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -39,13 +38,11 @@ state_repository = create_repository()
 agent_executor = AgentCLIExecutor()
 sandbox_factory = SandboxFactory()
 github_client = GitHubClient()
-phase_tracker = WorkflowPhaseTracker()
 command_loader = ClaudeCommandLoader()
 orchestrator = WorkflowOrchestrator(
     agent_executor=agent_executor,
     sandbox_factory=sandbox_factory,
     github_client=github_client,
-    phase_tracker=phase_tracker,
     command_loader=command_loader,
     state_repository=state_repository,
 )
@@ -62,8 +59,8 @@ async def create_agent_work_order(
     logger.info(
         "agent_work_order_creation_started",
         repository_url=request.repository_url,
-        workflow_type=request.workflow_type.value,
         sandbox_type=request.sandbox_type.value,
+        selected_commands=request.selected_commands,
     )
 
     try:
@@ -81,7 +78,6 @@ async def create_agent_work_order(
 
         # Create metadata
         metadata = {
-            "workflow_type": request.workflow_type,
             "sandbox_type": request.sandbox_type,
             "github_issue_number": request.github_issue_number,
             "status": AgentWorkOrderStatus.PENDING,
@@ -101,10 +97,10 @@ async def create_agent_work_order(
         asyncio.create_task(
             orchestrator.execute_workflow(
                 agent_work_order_id=agent_work_order_id,
-                workflow_type=request.workflow_type,
                 repository_url=request.repository_url,
                 sandbox_type=request.sandbox_type,
                 user_request=request.user_request,
+                selected_commands=request.selected_commands,
                 github_issue_number=request.github_issue_number,
             )
         )
@@ -144,7 +140,6 @@ async def get_agent_work_order(agent_work_order_id: str) -> AgentWorkOrder:
             sandbox_identifier=state.sandbox_identifier,
             git_branch_name=state.git_branch_name,
             agent_session_id=state.agent_session_id,
-            workflow_type=metadata["workflow_type"],
             sandbox_type=metadata["sandbox_type"],
             github_issue_number=metadata["github_issue_number"],
             status=metadata["status"],
@@ -194,7 +189,6 @@ async def list_agent_work_orders(
                 sandbox_identifier=state.sandbox_identifier,
                 git_branch_name=state.git_branch_name,
                 agent_session_id=state.agent_session_id,
-                workflow_type=metadata["workflow_type"],
                 sandbox_type=metadata["sandbox_type"],
                 github_issue_number=metadata["github_issue_number"],
                 status=metadata["status"],

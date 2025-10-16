@@ -6,7 +6,7 @@ All models follow exact naming from the PRD specification.
 from datetime import datetime
 from enum import Enum
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class AgentWorkOrderStatus(str, Enum):
@@ -41,19 +41,14 @@ class AgentWorkflowPhase(str, Enum):
 
 
 class WorkflowStep(str, Enum):
-    """Individual workflow execution steps"""
+    """User-selectable workflow commands"""
 
-    CLASSIFY = "classify"
-    PLAN = "plan"
-    FIND_PLAN = "find_plan"
-    IMPLEMENT = "implement"
-    GENERATE_BRANCH = "generate_branch"
+    CREATE_BRANCH = "create-branch"
+    PLANNING = "planning"
+    EXECUTE = "execute"
     COMMIT = "commit"
-    TEST = "test"
-    RESOLVE_TEST = "resolve_test"
-    REVIEW = "review"
-    RESOLVE_REVIEW = "resolve_review"
-    CREATE_PR = "create_pr"
+    CREATE_PR = "create-pr"
+    REVIEW = "prp-review"
 
 
 class AgentWorkOrderState(BaseModel):
@@ -84,7 +79,6 @@ class AgentWorkOrder(BaseModel):
     agent_session_id: str | None = None
 
     # Metadata fields
-    workflow_type: AgentWorkflowType
     sandbox_type: SandboxType
     github_issue_number: str | None = None
     status: AgentWorkOrderStatus
@@ -109,9 +103,22 @@ class CreateAgentWorkOrderRequest(BaseModel):
 
     repository_url: str = Field(..., description="Git repository URL")
     sandbox_type: SandboxType = Field(..., description="Sandbox environment type")
-    workflow_type: AgentWorkflowType = Field(..., description="Workflow to execute")
     user_request: str = Field(..., description="User's description of the work to be done")
+    selected_commands: list[str] = Field(
+        default=["create-branch", "planning", "execute", "commit", "create-pr"],
+        description="Commands to run in sequence"
+    )
     github_issue_number: str | None = Field(None, description="Optional explicit GitHub issue number for reference")
+
+    @field_validator('selected_commands')
+    @classmethod
+    def validate_commands(cls, v: list[str]) -> list[str]:
+        """Validate that all commands are valid WorkflowStep values"""
+        valid = {step.value for step in WorkflowStep}
+        for cmd in v:
+            if cmd not in valid:
+                raise ValueError(f"Invalid command: {cmd}. Must be one of {valid}")
+        return v
 
 
 class AgentWorkOrderResponse(BaseModel):
@@ -219,23 +226,19 @@ class StepHistory(BaseModel):
     steps: list[StepExecutionResult] = []
 
     def get_current_step(self) -> WorkflowStep | None:
-        """Get the current/next step to execute"""
+        """Get next step to execute"""
         if not self.steps:
-            return WorkflowStep.CLASSIFY
+            return WorkflowStep.CREATE_BRANCH
 
         last_step = self.steps[-1]
         if not last_step.success:
-            return last_step.step
+            return last_step.step  # Retry failed step
 
         step_sequence = [
-            WorkflowStep.CLASSIFY,
-            WorkflowStep.PLAN,
-            WorkflowStep.FIND_PLAN,
-            WorkflowStep.GENERATE_BRANCH,
-            WorkflowStep.IMPLEMENT,
+            WorkflowStep.CREATE_BRANCH,
+            WorkflowStep.PLANNING,
+            WorkflowStep.EXECUTE,
             WorkflowStep.COMMIT,
-            WorkflowStep.TEST,
-            WorkflowStep.REVIEW,
             WorkflowStep.CREATE_PR,
         ]
 
@@ -246,7 +249,7 @@ class StepHistory(BaseModel):
         except ValueError:
             pass
 
-        return None
+        return None  # All steps complete
 
 
 class CommandNotFoundError(Exception):

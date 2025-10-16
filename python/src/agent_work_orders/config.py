@@ -58,15 +58,6 @@ class AgentWorkOrdersConfig:
     FRONTEND_PORT_RANGE_START: int = int(os.getenv("FRONTEND_PORT_START", "9200"))
     FRONTEND_PORT_RANGE_END: int = int(os.getenv("FRONTEND_PORT_END", "9214"))
 
-    # Test workflow configuration
-    MAX_TEST_RETRY_ATTEMPTS: int = int(os.getenv("MAX_TEST_RETRY_ATTEMPTS", "4"))
-    ENABLE_TEST_PHASE: bool = os.getenv("ENABLE_TEST_PHASE", "true").lower() == "true"
-
-    # Review workflow configuration
-    MAX_REVIEW_RETRY_ATTEMPTS: int = int(os.getenv("MAX_REVIEW_RETRY_ATTEMPTS", "3"))
-    ENABLE_REVIEW_PHASE: bool = os.getenv("ENABLE_REVIEW_PHASE", "true").lower() == "true"
-    ENABLE_SCREENSHOT_CAPTURE: bool = os.getenv("ENABLE_SCREENSHOT_CAPTURE", "true").lower() == "true"
-
     # State management configuration
     STATE_STORAGE_TYPE: str = os.getenv("STATE_STORAGE_TYPE", "memory")  # "memory" or "file"
     FILE_STATE_DIRECTORY: str = os.getenv("FILE_STATE_DIRECTORY", "agent-work-orders-state")
