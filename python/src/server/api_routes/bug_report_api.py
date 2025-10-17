@@ -12,6 +12,7 @@ from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 
 from ..config.logfire_config import get_logger
+from ..config.version import GITHUB_REPO_NAME, GITHUB_REPO_OWNER
 
 logger = get_logger(__name__)
 
@@ -47,7 +48,9 @@ class BugReportResponse(BaseModel):
 class GitHubService:
     def __init__(self):
         self.token = os.getenv("GITHUB_TOKEN")
-        self.repo = os.getenv("GITHUB_REPO", "dynamous-community/Archon-V2-Alpha")
+        # Use centralized version config with environment override
+        default_repo = f"{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}"
+        self.repo = os.getenv("GITHUB_REPO", default_repo)
 
     async def create_issue(self, bug_report: BugReportRequest) -> dict[str, Any]:
         """Create a GitHub issue from a bug report."""
@@ -271,10 +274,13 @@ async def bug_report_health():
     github_configured = bool(os.getenv("GITHUB_TOKEN"))
     repo_configured = bool(os.getenv("GITHUB_REPO"))
 
+    # Use centralized version config with environment override
+    default_repo = f"{GITHUB_REPO_OWNER}/{GITHUB_REPO_NAME}"
+
     return {
         "status": "healthy" if github_configured else "degraded",
         "github_token_configured": github_configured,
         "github_repo_configured": repo_configured,
-        "repo": os.getenv("GITHUB_REPO", "dynamous-community/Archon-V2-Alpha"),
+        "repo": os.getenv("GITHUB_REPO", default_repo),
         "message": "Bug reporting is ready" if github_configured else "GitHub token not configured",
     }
