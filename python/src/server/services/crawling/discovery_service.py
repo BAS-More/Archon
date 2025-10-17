@@ -143,23 +143,57 @@ class DiscoveryService:
 
             # Check files in global priority order
             for filename in self.DISCOVERY_PRIORITY:
-                # Try location relative to the given URL
+                from urllib.parse import urlparse
+
+                # Get the directory path of the base URL
+                parsed = urlparse(base_url)
+                base_path = parsed.path.rstrip('/')
+                # Extract directory (remove filename if present)
+                if '.' in base_path.split('/')[-1]:
+                    base_dir = '/'.join(base_path.split('/')[:-1])
+                else:
+                    base_dir = base_path
+
+                # Priority 1: Check same directory as base_url (e.g., /docs/llms.txt for /docs URL)
+                if base_dir and base_dir != '/':
+                    same_dir_url = f"{parsed.scheme}://{parsed.netloc}{base_dir}/{filename}"
+                    if self._check_url_exists(same_dir_url):
+                        logger.info(f"Discovery found best file in same directory: {same_dir_url}")
+                        return same_dir_url
+
+                # Priority 2: Check root-level (standard urljoin behavior)
                 file_url = urljoin(base_url, filename)
                 if self._check_url_exists(file_url):
-                    logger.info(f"Discovery found best file: {file_url}")
+                    logger.info(f"Discovery found best file at root: {file_url}")
                     return file_url
 
-                # For llms files, also try common subdirectories
+                # Priority 3: For llms files, check common subdirectories (including base directory name)
                 if filename.startswith('llms'):
-                    for subdir in ["static", "public", "docs", "assets", "doc", "api"]:
+                    # Extract base directory name to check it first
+                    subdirs = []
+                    if base_dir and base_dir != '/':
+                        base_dir_name = base_dir.split('/')[-1]
+                        if base_dir_name:
+                            subdirs.append(base_dir_name)
+                    subdirs.extend(["docs", "static", "public", "assets", "doc", "api"])
+
+                    for subdir in subdirs:
                         subdir_url = urljoin(base_url, f"{subdir}/{filename}")
                         if self._check_url_exists(subdir_url):
                             logger.info(f"Discovery found best file in subdirectory: {subdir_url}")
                             return subdir_url
 
-                # For sitemap files, also try common subdirectories
+                # Priority 4: For sitemap files, check common subdirectories (including base directory name)
                 if filename.endswith('.xml') and not filename.startswith('.well-known'):
-                    for subdir in ["sitemaps", "sitemap", "xml", "feed"]:
+                    # Extract base directory name to check it first
+                    subdirs = []
+                    if base_dir and base_dir != '/':
+                        base_dir_name = base_dir.split('/')[-1]
+                        if base_dir_name:
+                            subdirs.append(base_dir_name)
+                    subdirs.extend(["docs", "sitemaps", "sitemap", "xml", "feed"])
+
+                    for subdir in subdirs:
                         subdir_url = urljoin(base_url, f"{subdir}/{filename}")
                         if self._check_url_exists(subdir_url):
                             logger.info(f"Discovery found best file in subdirectory: {subdir_url}")
