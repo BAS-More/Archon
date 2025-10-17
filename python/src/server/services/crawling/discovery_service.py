@@ -124,10 +124,10 @@ class DiscoveryService:
         """
         Main discovery orchestrator - selects ONE best file across all categories.
         All files contain similar AI/crawling guidance, so we only need the best one.
-        
+
         Args:
             base_url: Base URL to discover files for
-            
+
         Returns:
             Single best URL found, or None if no files discovered
         """
@@ -182,7 +182,7 @@ class DiscoveryService:
     def _discover_best_sitemap(self, base_url: str) -> str | None:
         """
         Discover the best available sitemap using priority-based selection.
-        
+
         Priority order:
         1. Sitemaps from robots.txt (highest priority - explicitly declared)
         2. Standard locations (sitemap_index.xml > sitemap-index.xml > sitemap.xml)
@@ -228,7 +228,7 @@ class DiscoveryService:
     def _discover_best_llms_file(self, base_url: str) -> str | None:
         """
         Discover the best available llms file using priority-based selection.
-        
+
         Priority order:
         1. Standard locations (llms-full.txt > llms.txt > llms.md > llms.mdx > llms.markdown)
         2. Common subdirectory variations (static, public, docs, assets)
@@ -270,7 +270,7 @@ class DiscoveryService:
                 return robots_url
         except Exception:
             logger.exception(f"Error discovering robots file for {base_url}")
-        
+
         return None
 
     def _check_url_exists(self, url: str) -> bool:
@@ -315,12 +315,17 @@ class DiscoveryService:
                 content = self._read_response_with_limit(resp, robots_url)
 
                 # Parse robots.txt content for sitemap directives
-                for line in content.splitlines():
-                    line = line.strip().lower()
-                    if line.startswith("sitemap:"):
-                        sitemap_url = line.split(":", 1)[1].strip()
-                        # Validate URL format before adding
-                        if sitemap_url and (sitemap_url.startswith('http://') or sitemap_url.startswith('https://')):
+                for raw_line in content.splitlines():
+                    line = raw_line.strip()
+                    if line.lower().startswith("sitemap:"):
+                        sitemap_value = line.split(":", 1)[1].strip()
+                        if sitemap_value:
+                            # Allow absolute and relative sitemap values
+                            if sitemap_value.lower().startswith(("http://", "https://")):
+                                sitemap_url = sitemap_value
+                            else:
+                                # Resolve relative path against base_url
+                                sitemap_url = urljoin(base_url, sitemap_value)
                             sitemaps.append(sitemap_url)
                             logger.info(f"Found sitemap in robots.txt: {sitemap_url}")
 
@@ -341,10 +346,10 @@ class DiscoveryService:
     def _check_standard_patterns(self, base_url: str) -> dict[str, list[str]]:
         """
         Check common file locations for discovery targets.
-        
+
         Args:
             base_url: Base URL to check standard locations for
-            
+
         Returns:
             Dictionary with file types and discovered URLs
         """
@@ -395,10 +400,10 @@ class DiscoveryService:
     def _parse_html_meta_tags(self, base_url: str) -> list[str]:
         """
         Extract sitemap references from HTML meta tags.
-        
+
         Args:
             base_url: Base URL to check HTML for meta tags
-            
+
         Returns:
             List of sitemap URLs found in HTML meta tags
         """
@@ -415,28 +420,36 @@ class DiscoveryService:
 
                 # Read response with size limit
                 content = self._read_response_with_limit(resp, base_url)
-                content = content.lower()
 
                 # Look for sitemap meta tags or link elements
                 import re
+                from urllib.parse import urlparse
 
-                # Check for <link rel="sitemap" href="...">
-                sitemap_link_pattern = r'<link[^>]*rel=["\']sitemap["\'][^>]*href=["\']([^"\']+)["\']'
-                matches = re.findall(sitemap_link_pattern, content)
-
-                for match in matches:
-                    sitemap_url = urljoin(base_url, match)
-                    sitemaps.append(sitemap_url)
-                    logger.info(f"Found sitemap in HTML link tag: {sitemap_url}")
-
-                # Check for <meta name="sitemap" content="...">
-                sitemap_meta_pattern = r'<meta[^>]*name=["\']sitemap["\'][^>]*content=["\']([^"\']+)["\']'
-                matches = re.findall(sitemap_meta_pattern, content)
+                # Check for <link rel="sitemap" href="..."> (case-insensitive)
+                sitemap_link_pattern = re.compile(
+                    r'<link[^>]*rel=["\']sitemap["\'][^>]*href=["\']([^"\']+)["\']',
+                    re.IGNORECASE
+                )
+                matches = sitemap_link_pattern.findall(content)
 
                 for match in matches:
                     sitemap_url = urljoin(base_url, match)
-                    sitemaps.append(sitemap_url)
-                    logger.info(f"Found sitemap in HTML meta tag: {sitemap_url}")
+                    if urlparse(sitemap_url).scheme in ("http", "https"):
+                        sitemaps.append(sitemap_url)
+                        logger.info(f"Found sitemap in HTML link tag: {sitemap_url}")
+
+                # Check for <meta name="sitemap" content="..."> (case-insensitive)
+                sitemap_meta_pattern = re.compile(
+                    r'<meta[^>]*name=["\']sitemap["\'][^>]*content=["\']([^"\']+)["\']',
+                    re.IGNORECASE
+                )
+                matches = sitemap_meta_pattern.findall(content)
+
+                for match in matches:
+                    sitemap_url = urljoin(base_url, match)
+                    if urlparse(sitemap_url).scheme in ("http", "https"):
+                        sitemaps.append(sitemap_url)
+                        logger.info(f"Found sitemap in HTML meta tag: {sitemap_url}")
 
             finally:
                 resp.close()
@@ -454,10 +467,10 @@ class DiscoveryService:
     def _check_well_known_directory(self, base_url: str) -> list[str]:
         """
         Check .well-known/* files for discovery targets.
-        
+
         Args:
             base_url: Base URL to check .well-known directory for
-            
+
         Returns:
             List of URLs found in .well-known directory
         """
@@ -490,10 +503,10 @@ class DiscoveryService:
     def _try_common_variations(self, base_url: str) -> dict[str, list[str]]:
         """
         Try pattern variations for discovery targets.
-        
+
         Args:
             base_url: Base URL to try variations for
-            
+
         Returns:
             Dictionary with file types and discovered variation URLs
         """

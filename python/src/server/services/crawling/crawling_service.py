@@ -20,11 +20,11 @@ from ..credential_service import credential_service
 # Import operations
 from .discovery_service import DiscoveryService
 from .document_storage_operations import DocumentStorageOperations
-from .page_storage_operations import PageStorageOperations
 from .helpers.site_config import SiteConfig
 
 # Import helpers
 from .helpers.url_handler import URLHandler
+from .page_storage_operations import PageStorageOperations
 from .progress_mapper import ProgressMapper
 from .strategies.batch import BatchCrawlStrategy
 from .strategies.recursive import RecursiveCrawlStrategy
@@ -413,18 +413,18 @@ class CrawlingService:
                     total_pages=total_urls_to_crawl,
                     processed_pages=0
                 )
-                
+
                 # Crawl only the discovered file with discovery context
                 discovered_url = discovered_urls[0]
                 safe_logfire_info(f"Crawling discovered file instead of main URL: {discovered_url}")
-                
+
                 # Mark this as a discovery target for domain filtering
                 discovery_request = request.copy()
                 discovery_request["is_discovery_target"] = True
-                discovery_request["original_domain"] = self.url_handler.get_base_url(url)
-                
+                discovery_request["original_domain"] = self.url_handler.get_base_url(discovered_url)
+
                 crawl_results, crawl_type = await self._crawl_by_url_type(discovered_url, discovery_request)
-                
+
             else:
                 # No discovery - crawl the main URL normally
                 total_urls_to_crawl = 1
@@ -433,7 +433,7 @@ class CrawlingService:
                     total_pages=total_urls_to_crawl,
                     processed_pages=0
                 )
-                
+
                 # Crawl the main URL
                 safe_logfire_info(f"No discovery file found, crawling main URL: {url}")
                 crawl_results, crawl_type = await self._crawl_by_url_type(url, request)
@@ -608,7 +608,7 @@ class CrawlingService:
                     logger.error("Code extraction failed, continuing crawl without code examples", exc_info=True)
                     safe_logfire_error(f"Code extraction failed | error={e}")
                     code_examples_count = 0
-                    
+
                     # Report code extraction failure to progress tracker
                     if self.progress_tracker:
                         await self.progress_tracker.update(
@@ -708,11 +708,11 @@ class CrawlingService:
     def _is_same_domain(self, url: str, base_domain: str) -> bool:
         """
         Check if a URL belongs to the same domain as the base domain.
-        
+
         Args:
             url: URL to check
             base_domain: Base domain URL to compare against
-            
+
         Returns:
             True if the URL is from the same domain
         """
@@ -842,7 +842,7 @@ class CrawlingService:
 
                     if extracted_links_with_text:
                         # Build mapping of URL -> link text for title fallback
-                        url_to_link_text = {link: text for link, text in extracted_links_with_text}
+                        url_to_link_text = dict(extracted_links_with_text)
                         extracted_links = [link for link, _ in extracted_links_with_text]
 
                         # For discovery targets, respect max_depth for same-domain links
