@@ -48,7 +48,7 @@ orchestrator = WorkflowOrchestrator(
 )
 
 
-@router.post("/agent-work-orders", status_code=201)
+@router.post("/", status_code=201)
 async def create_agent_work_order(
     request: CreateAgentWorkOrderRequest,
 ) -> AgentWorkOrderResponse:
@@ -121,7 +121,7 @@ async def create_agent_work_order(
         raise HTTPException(status_code=500, detail=f"Failed to create work order: {e}") from e
 
 
-@router.get("/agent-work-orders/{agent_work_order_id}")
+@router.get("/{agent_work_order_id}")
 async def get_agent_work_order(agent_work_order_id: str) -> AgentWorkOrder:
     """Get agent work order by ID"""
     logger.info("agent_work_order_get_started", agent_work_order_id=agent_work_order_id)
@@ -167,7 +167,7 @@ async def get_agent_work_order(agent_work_order_id: str) -> AgentWorkOrder:
         raise HTTPException(status_code=500, detail=f"Failed to get work order: {e}") from e
 
 
-@router.get("/agent-work-orders")
+@router.get("/")
 async def list_agent_work_orders(
     status: AgentWorkOrderStatus | None = None,
 ) -> list[AgentWorkOrder]:
@@ -210,7 +210,7 @@ async def list_agent_work_orders(
         raise HTTPException(status_code=500, detail=f"Failed to list work orders: {e}") from e
 
 
-@router.post("/agent-work-orders/{agent_work_order_id}/prompt")
+@router.post("/{agent_work_order_id}/prompt")
 async def send_prompt_to_agent(
     agent_work_order_id: str,
     request: AgentPromptRequest,
@@ -235,7 +235,7 @@ async def send_prompt_to_agent(
     }
 
 
-@router.get("/agent-work-orders/{agent_work_order_id}/git-progress")
+@router.get("/{agent_work_order_id}/git-progress")
 async def get_git_progress(agent_work_order_id: str) -> GitProgressSnapshot:
     """Get git progress for a work order"""
     logger.info("git_progress_get_started", agent_work_order_id=agent_work_order_id)
@@ -283,7 +283,7 @@ async def get_git_progress(agent_work_order_id: str) -> GitProgressSnapshot:
         raise HTTPException(status_code=500, detail=f"Failed to get git progress: {e}") from e
 
 
-@router.get("/agent-work-orders/{agent_work_order_id}/logs")
+@router.get("/{agent_work_order_id}/logs")
 async def get_agent_work_order_logs(
     agent_work_order_id: str,
     limit: int = 100,
@@ -311,7 +311,7 @@ async def get_agent_work_order_logs(
     }
 
 
-@router.get("/agent-work-orders/{agent_work_order_id}/steps")
+@router.get("/{agent_work_order_id}/steps")
 async def get_agent_work_order_steps(agent_work_order_id: str) -> StepHistory:
     """Get step execution history for a work order
 
