@@ -134,14 +134,8 @@ class DiscoveryService:
         try:
             logger.info(f"Starting single-file discovery for {base_url}")
 
-            # First check robots.txt for explicit sitemap declarations (special case)
-            robots_sitemaps = self._parse_robots_txt(base_url)
-            if robots_sitemaps:
-                best_file = robots_sitemaps[0]  # Use first sitemap from robots.txt
-                logger.info(f"Discovery found best file from robots.txt: {best_file}")
-                return best_file
-
             # Check files in global priority order
+            # Note: robots.txt sitemaps are not given special priority as llms files should be preferred
             for filename in self.DISCOVERY_PRIORITY:
                 from urllib.parse import urlparse
 

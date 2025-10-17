@@ -97,14 +97,14 @@ class TestDiscoveryService:
 
     @patch('requests.get')
     def test_discover_files_robots_sitemap_priority(self, mock_get):
-        """Test that robots.txt sitemap declarations have highest priority."""
+        """Test that llms files have priority over robots.txt sitemap declarations."""
         service = DiscoveryService()
         base_url = "https://example.com"
 
         # Mock robots.txt response WITH sitemap declaration
         robots_response = create_mock_response(200, "User-agent: *\nSitemap: https://example.com/declared-sitemap.xml")
 
-        # Mock other files also exist
+        # Mock other files also exist (both llms and sitemap files)
         def mock_get_side_effect(url, **kwargs):
             if url.endswith('robots.txt'):
                 return robots_response
@@ -117,8 +117,9 @@ class TestDiscoveryService:
 
         result = service.discover_files(base_url)
 
-        # Should return the sitemap declared in robots.txt (highest priority)
-        assert result == 'https://example.com/declared-sitemap.xml'
+        # Should return llms-full.txt since llms files have priority over sitemaps
+        # even when sitemaps are declared in robots.txt
+        assert result == 'https://example.com/llms-full.txt'
 
     @patch('requests.get')
     def test_discover_files_subdirectory_fallback(self, mock_get):
