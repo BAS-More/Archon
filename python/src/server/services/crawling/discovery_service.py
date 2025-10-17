@@ -135,51 +135,71 @@ class DiscoveryService:
             logger.info(f"Starting single-file discovery for {base_url}")
 
             # Check files in global priority order
-            # Note: robots.txt sitemaps are not given special priority as llms files should be preferred
+            # IMPORTANT: Check root-level llms files BEFORE same-directory sitemaps
+            # This ensures llms.txt at root is preferred over /docs/sitemap.xml
+            from urllib.parse import urlparse
+
+            # Get the directory path of the base URL
+            parsed = urlparse(base_url)
+            base_path = parsed.path.rstrip('/')
+            # Extract directory (remove filename if present)
+            if '.' in base_path.split('/')[-1]:
+                base_dir = '/'.join(base_path.split('/')[:-1])
+            else:
+                base_dir = base_path
+
+            # Phase 1: Check llms files at ALL priority levels before checking sitemaps
             for filename in self.DISCOVERY_PRIORITY:
-                from urllib.parse import urlparse
+                if not filename.startswith('llms') and not filename.startswith('.well-known/llms') and not filename.startswith('.well-known/ai'):
+                    continue  # Skip non-llms files in this phase
 
-                # Get the directory path of the base URL
-                parsed = urlparse(base_url)
-                base_path = parsed.path.rstrip('/')
-                # Extract directory (remove filename if present)
-                if '.' in base_path.split('/')[-1]:
-                    base_dir = '/'.join(base_path.split('/')[:-1])
-                else:
-                    base_dir = base_path
-
-                # Priority 1: Check same directory as base_url (e.g., /docs/llms.txt for /docs URL)
+                # Priority 1a: Check same directory for llms files
                 if base_dir and base_dir != '/':
                     same_dir_url = f"{parsed.scheme}://{parsed.netloc}{base_dir}/{filename}"
                     if self._check_url_exists(same_dir_url):
                         logger.info(f"Discovery found best file in same directory: {same_dir_url}")
                         return same_dir_url
 
-                # Priority 2: Check root-level (standard urljoin behavior)
+                # Priority 1b: Check root-level for llms files
                 file_url = urljoin(base_url, filename)
                 if self._check_url_exists(file_url):
                     logger.info(f"Discovery found best file at root: {file_url}")
                     return file_url
 
-                # Priority 3: For llms files, check common subdirectories (including base directory name)
-                if filename.startswith('llms'):
-                    # Extract base directory name to check it first
-                    subdirs = []
-                    if base_dir and base_dir != '/':
-                        base_dir_name = base_dir.split('/')[-1]
-                        if base_dir_name:
-                            subdirs.append(base_dir_name)
-                    subdirs.extend(["docs", "static", "public", "assets", "doc", "api"])
+                # Priority 1c: Check subdirectories for llms files
+                subdirs = []
+                if base_dir and base_dir != '/':
+                    base_dir_name = base_dir.split('/')[-1]
+                    if base_dir_name:
+                        subdirs.append(base_dir_name)
+                subdirs.extend(["docs", "static", "public", "assets", "doc", "api"])
 
-                    for subdir in subdirs:
-                        subdir_url = urljoin(base_url, f"{subdir}/{filename}")
-                        if self._check_url_exists(subdir_url):
-                            logger.info(f"Discovery found best file in subdirectory: {subdir_url}")
-                            return subdir_url
+                for subdir in subdirs:
+                    subdir_url = urljoin(base_url, f"{subdir}/{filename}")
+                    if self._check_url_exists(subdir_url):
+                        logger.info(f"Discovery found best file in subdirectory: {subdir_url}")
+                        return subdir_url
 
-                # Priority 4: For sitemap files, check common subdirectories (including base directory name)
+            # Phase 2: Check sitemaps and robots.txt (only if no llms files found)
+            for filename in self.DISCOVERY_PRIORITY:
+                if filename.startswith('llms') or filename.startswith('.well-known/llms') or filename.startswith('.well-known/ai'):
+                    continue  # Skip llms files, already checked
+
+                # Priority 2a: Check same directory
+                if base_dir and base_dir != '/':
+                    same_dir_url = f"{parsed.scheme}://{parsed.netloc}{base_dir}/{filename}"
+                    if self._check_url_exists(same_dir_url):
+                        logger.info(f"Discovery found best file in same directory: {same_dir_url}")
+                        return same_dir_url
+
+                # Priority 2b: Check root-level
+                file_url = urljoin(base_url, filename)
+                if self._check_url_exists(file_url):
+                    logger.info(f"Discovery found best file at root: {file_url}")
+                    return file_url
+
+                # Priority 2c: For sitemap files, check common subdirectories
                 if filename.endswith('.xml') and not filename.startswith('.well-known'):
-                    # Extract base directory name to check it first
                     subdirs = []
                     if base_dir and base_dir != '/':
                         base_dir_name = base_dir.split('/')[-1]

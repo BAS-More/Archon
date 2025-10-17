@@ -385,17 +385,32 @@ class CrawlingService:
                         if not self.url_handler.is_binary_file(discovered_file):
                             discovered_urls.append(discovered_file)
                             safe_logfire_info(f"Adding discovered file to crawl: {discovered_file}")
+
+                            # Determine file type for user feedback
+                            discovered_file_type = "unknown"
+                            if self.url_handler.is_llms_variant(discovered_file):
+                                discovered_file_type = "llms.txt"
+                            elif self.url_handler.is_sitemap(discovered_file):
+                                discovered_file_type = "sitemap"
+                            elif self.url_handler.is_robots_txt(discovered_file):
+                                discovered_file_type = "robots.txt"
+
+                            await update_mapped_progress(
+                                "discovery", 100,
+                                f"Discovery completed: found {discovered_file_type} file",
+                                current_url=url,
+                                discovered_file=discovered_file,
+                                discovered_file_type=discovered_file_type
+                            )
                         else:
                             safe_logfire_info(f"Skipping binary file: {discovered_file}")
                     else:
                         safe_logfire_info(f"Discovery found no files for {url}")
-
-                    file_count = len(discovered_urls)
-                    safe_logfire_info(f"Discovery selected {file_count} best file to crawl")
-
-                    await update_mapped_progress(
-                        "discovery", 100, f"Discovery completed: selected {file_count} best file", current_url=url
-                    )
+                        await update_mapped_progress(
+                            "discovery", 100,
+                            "Discovery completed: no special files found, will crawl main URL",
+                            current_url=url
+                        )
 
                 except Exception as e:
                     safe_logfire_error(f"Discovery phase failed: {e}")
@@ -726,6 +741,52 @@ class CrawlingService:
             # If parsing fails, be conservative and exclude the URL
             return False
 
+    def _is_same_domain_or_subdomain(self, url: str, base_domain: str) -> bool:
+        """
+        Check if a URL belongs to the same root domain or subdomain.
+
+        Examples:
+            - docs.supabase.com matches supabase.com (subdomain)
+            - api.supabase.com matches supabase.com (subdomain)
+            - supabase.com matches supabase.com (exact match)
+            - external.com does NOT match supabase.com
+
+        Args:
+            url: URL to check
+            base_domain: Base domain URL to compare against
+
+        Returns:
+            True if the URL is from the same root domain or subdomain
+        """
+        try:
+            from urllib.parse import urlparse
+            u, b = urlparse(url), urlparse(base_domain)
+            url_host = (u.hostname or "").lower()
+            base_host = (b.hostname or "").lower()
+
+            if not url_host or not base_host:
+                return False
+
+            # Exact match
+            if url_host == base_host:
+                return True
+
+            # Check if url_host is a subdomain of base_host
+            # Extract root domain (last 2 parts for .com, .org, etc.)
+            def get_root_domain(host: str) -> str:
+                parts = host.split('.')
+                if len(parts) >= 2:
+                    return '.'.join(parts[-2:])
+                return host
+
+            url_root = get_root_domain(url_host)
+            base_root = get_root_domain(base_host)
+
+            return url_root == base_root
+        except Exception:
+            # If parsing fails, be conservative and exclude the URL
+            return False
+
     def _is_self_link(self, link: str, base_url: str) -> bool:
         """
         Check if a link is a self-referential link to the base URL.
@@ -798,8 +859,60 @@ class CrawlingService:
             if crawl_results and len(crawl_results) > 0:
                 content = crawl_results[0].get('markdown', '')
                 if self.url_handler.is_link_collection_file(url, content):
-                    # If this file was selected by discovery, skip link extraction (single-file mode)
+                    # If this file was selected by discovery, check if it's an llms.txt file
                     if request.get("is_discovery_target"):
+                        # Check if this is an llms.txt file (not sitemap or other discovery targets)
+                        is_llms_file = self.url_handler.is_llms_variant(url)
+
+                        if is_llms_file:
+                            logger.info(f"Discovery llms.txt mode: checking for linked llms.txt files at {url}")
+
+                            # Extract all links from the file
+                            extracted_links_with_text = self.url_handler.extract_markdown_links_with_text(content, url)
+
+                            # Filter for llms.txt files only on same domain
+                            llms_links = []
+                            if extracted_links_with_text:
+                                original_domain = request.get("original_domain")
+                                if original_domain:
+                                    for link, text in extracted_links_with_text:
+                                        # Check if link is to another llms.txt file
+                                        if self.url_handler.is_llms_variant(link):
+                                            # Check same domain/subdomain
+                                            if self._is_same_domain_or_subdomain(link, original_domain):
+                                                llms_links.append((link, text))
+                                                logger.info(f"Found linked llms.txt: {link}")
+
+                            if llms_links:
+                                # Build mapping and extract just URLs
+                                url_to_link_text = dict(llms_links)
+                                extracted_llms_urls = [link for link, _ in llms_links]
+
+                                logger.info(f"Following {len(extracted_llms_urls)} linked llms.txt files")
+
+                                # Notify user about linked files being crawled
+                                await update_crawl_progress(
+                                    60,  # 60% of crawling stage
+                                    f"Found {len(extracted_llms_urls)} linked llms.txt files, crawling them now...",
+                                    crawl_type="llms_txt_linked_files",
+                                    linked_files=extracted_llms_urls
+                                )
+
+                                # Crawl linked llms.txt files (no recursion, just one level)
+                                batch_results = await self.crawl_batch_with_progress(
+                                    extracted_llms_urls,
+                                    max_concurrent=request.get('max_concurrent'),
+                                    progress_callback=await self._create_crawl_progress_callback("crawling"),
+                                    link_text_fallbacks=url_to_link_text,
+                                )
+
+                                # Combine original llms.txt with linked files
+                                crawl_results.extend(batch_results)
+                                crawl_type = "llms_txt_with_linked_files"
+                                logger.info(f"llms.txt crawling completed: {len(crawl_results)} total files (1 main + {len(batch_results)} linked)")
+                                return crawl_results, crawl_type
+
+                        # For non-llms.txt discovery targets (sitemaps, robots.txt), keep single-file mode
                         logger.info(f"Discovery single-file mode: skipping link extraction for {url}")
                         crawl_type = "discovery_single_file"
                         logger.info(f"Discovery file crawling completed: {len(crawl_results)} result")

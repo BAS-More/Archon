@@ -634,6 +634,10 @@ class URLHandler:
         """
         Check if a URL is a llms.txt/llms.md variant with error handling.
 
+        Matches:
+        - Exact filename matches: llms.txt, llms-full.txt, llms.md, etc.
+        - Files in /llms/ directories: /llms/guides.txt, /llms/swift.txt, etc.
+
         Args:
             url: URL to check
 
@@ -646,9 +650,16 @@ class URLHandler:
             path = parsed.path.lower()
             filename = path.split('/')[-1] if '/' in path else path
 
-            # Check for llms file variants
+            # Check for exact llms file variants (llms.txt, llms.md, etc.)
             llms_variants = ['llms-full.txt', 'llms.txt', 'llms.md', 'llms.mdx', 'llms.markdown']
-            return filename in llms_variants
+            if filename in llms_variants:
+                return True
+
+            # Check for .txt files in /llms/ directory (e.g., /llms/guides.txt, /llms/swift.txt)
+            if '/llms/' in path and path.endswith('.txt'):
+                return True
+
+            return False
         except Exception as e:
             logger.warning(f"Error checking if URL is llms variant: {e}", exc_info=True)
             return False
