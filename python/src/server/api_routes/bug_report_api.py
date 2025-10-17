@@ -246,14 +246,13 @@ def _create_manual_submission_response(bug_report: BugReportRequest) -> BugRepor
     import urllib.parse
 
     base_url = f"https://github.com/{github_service.repo}/issues/new"
-    params = {
-        "template": "bug_report.yml",
-        "title": bug_report.title,
-        "labels": f"bug,auto-report,severity:{bug_report.severity},component:{bug_report.component}",
-    }
 
-    # Add the formatted body as a parameter
-    params["body"] = issue_body
+    # GitHub only supports title and body parameters for pre-filling
+    # Labels cannot be set via URL (requires API or manual selection)
+    params = {
+        "title": bug_report.title,
+        "body": issue_body,
+    }
 
     # Build the URL
     query_string = urllib.parse.urlencode(params)
