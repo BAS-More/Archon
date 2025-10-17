@@ -142,10 +142,23 @@ class DiscoveryService:
             # Get the directory path of the base URL
             parsed = urlparse(base_url)
             base_path = parsed.path.rstrip('/')
+
+            # Known file extensions - only treat as file if last segment has one of these
+            FILE_EXTENSIONS = {
+                '.html', '.htm', '.xml', '.json', '.txt', '.md', '.csv',
+                '.rss', '.yaml', '.yml', '.pdf', '.zip'
+            }
+
             # Extract directory (remove filename if present)
-            if '.' in base_path.split('/')[-1]:
+            last_segment = base_path.split('/')[-1] if base_path else ''
+            # Check if the last segment ends with a known file extension
+            has_file_extension = any(last_segment.lower().endswith(ext) for ext in FILE_EXTENSIONS)
+
+            if has_file_extension:
+                # Last segment is a file, strip it to get directory
                 base_dir = '/'.join(base_path.split('/')[:-1])
             else:
+                # Last segment is a directory (e.g., /docs.v2)
                 base_dir = base_path
 
             # Phase 1: Check llms files at ALL priority levels before checking sitemaps
