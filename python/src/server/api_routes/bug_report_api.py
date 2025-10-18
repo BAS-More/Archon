@@ -247,9 +247,10 @@ def _create_manual_submission_response(bug_report: BugReportRequest) -> BugRepor
 
     base_url = f"https://github.com/{github_service.repo}/issues/new"
 
-    # GitHub only supports title and body parameters for pre-filling
-    # Labels cannot be set via URL (requires API or manual selection)
+    # Use Markdown template for structured layout with URL pre-filling support
+    # YAML templates don't support URL parameters, but Markdown templates do
     params = {
+        "template": "auto_bug_report.md",
         "title": bug_report.title,
         "body": issue_body,
     }

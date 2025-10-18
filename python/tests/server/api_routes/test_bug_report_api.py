@@ -119,10 +119,10 @@ def test_manual_submission_url_uses_correct_repo(client, mock_bug_report):
         # Ensure old repository is NOT in URL
         assert "dynamous-community" not in data["issue_url"]
         assert "Archon-V2-Alpha" not in data["issue_url"]
-        # Verify URL contains title and body parameters (not template)
+        # Verify URL contains required parameters including template
         assert "title=" in data["issue_url"]
         assert "body=" in data["issue_url"]
-        assert "template=" not in data["issue_url"]
+        assert "template=auto_bug_report.md" in data["issue_url"]
 
 
 def test_api_submission_with_token(client, mock_bug_report):
