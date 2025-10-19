@@ -152,11 +152,11 @@ class TestLlmsTxtLinkFollowing:
 
         assert set(crawled_urls) == set(expected_urls)
 
-        # Verify total results include main file + linked files
-        assert len(crawl_results) == 9, f"Should have 9 total files (1 main + 8 linked), got {len(crawl_results)}"
+        # Verify total results include main file + linked pages
+        assert len(crawl_results) == 9, f"Should have 9 total pages (1 main + 8 linked), got {len(crawl_results)}"
 
         # Verify crawl type
-        assert crawl_type == "llms_txt_with_linked_files"
+        assert crawl_type == "llms_txt_with_linked_pages"
 
     def test_external_llms_links_are_filtered(self, service):
         """Test that external domain llms.txt links are filtered out."""
