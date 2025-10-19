@@ -4,7 +4,6 @@
  */
 
 const SAFE_PROTOCOLS = ["http:", "https:"];
-const UNSAFE_PROTOCOLS = ["javascript:", "data:", "vbscript:", "file:"];
 
 /**
  * Validates that a URL is safe to render as a clickable link.
@@ -29,11 +28,6 @@ export function isValidHttpUrl(url: string | undefined | null): boolean {
 
 		// Only allow http and https protocols
 		if (!SAFE_PROTOCOLS.includes(parsed.protocol)) {
-			return false;
-		}
-
-		// Explicitly reject known unsafe protocols
-		if (UNSAFE_PROTOCOLS.some((unsafe) => trimmed.toLowerCase().startsWith(unsafe))) {
 			return false;
 		}
 
