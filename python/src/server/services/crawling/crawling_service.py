@@ -11,6 +11,8 @@ import uuid
 from collections.abc import Awaitable, Callable
 from typing import Any, Optional
 
+import tldextract
+
 from ...config.logfire_config import get_logger, safe_logfire_error, safe_logfire_info
 from ...utils import get_supabase_client
 from ...utils.progress.progress_tracker import ProgressTracker
@@ -36,6 +38,34 @@ logger = get_logger(__name__)
 # Global registry to track active orchestration services for cancellation support
 _active_orchestrations: dict[str, "CrawlingService"] = {}
 _orchestration_lock: asyncio.Lock | None = None
+
+
+def get_root_domain(host: str) -> str:
+    """
+    Extract the root domain from a hostname using tldextract.
+    Handles multi-part public suffixes correctly (e.g., .co.uk, .com.au).
+
+    Args:
+        host: Hostname to extract root domain from
+
+    Returns:
+        Root domain (domain + suffix) or original host if extraction fails
+
+    Examples:
+        - "docs.example.com" -> "example.com"
+        - "api.example.co.uk" -> "example.co.uk"
+        - "localhost" -> "localhost"
+    """
+    try:
+        extracted = tldextract.extract(host)
+        # Return domain.suffix if both are present
+        if extracted.domain and extracted.suffix:
+            return f"{extracted.domain}.{extracted.suffix}"
+        # Fallback to original host if extraction yields no domain or suffix
+        return host
+    except Exception:
+        # If extraction fails, return original host
+        return host
 
 
 def _ensure_orchestration_lock() -> asyncio.Lock:
@@ -771,14 +801,7 @@ class CrawlingService:
             if url_host == base_host:
                 return True
 
-            # Check if url_host is a subdomain of base_host
-            # Extract root domain (last 2 parts for .com, .org, etc.)
-            def get_root_domain(host: str) -> str:
-                parts = host.split('.')
-                if len(parts) >= 2:
-                    return '.'.join(parts[-2:])
-                return host
-
+            # Check if url_host is a subdomain of base_host using tldextract
             url_root = get_root_domain(url_host)
             base_root = get_root_domain(base_host)
 
@@ -865,51 +888,49 @@ class CrawlingService:
                         is_llms_file = self.url_handler.is_llms_variant(url)
 
                         if is_llms_file:
-                            logger.info(f"Discovery llms.txt mode: checking for linked llms.txt files at {url}")
+                            logger.info(f"Discovery llms.txt mode: following ALL same-domain links from {url}")
 
                             # Extract all links from the file
                             extracted_links_with_text = self.url_handler.extract_markdown_links_with_text(content, url)
 
-                            # Filter for llms.txt files only on same domain
-                            llms_links = []
+                            # Filter for same-domain links (all types, not just llms.txt)
+                            same_domain_links = []
                             if extracted_links_with_text:
                                 original_domain = request.get("original_domain")
                                 if original_domain:
                                     for link, text in extracted_links_with_text:
-                                        # Check if link is to another llms.txt file
-                                        if self.url_handler.is_llms_variant(link):
-                                            # Check same domain/subdomain
-                                            if self._is_same_domain_or_subdomain(link, original_domain):
-                                                llms_links.append((link, text))
-                                                logger.info(f"Found linked llms.txt: {link}")
+                                        # Check same domain/subdomain for ALL links
+                                        if self._is_same_domain_or_subdomain(link, original_domain):
+                                            same_domain_links.append((link, text))
+                                            logger.debug(f"Found same-domain link: {link}")
 
-                            if llms_links:
+                            if same_domain_links:
                                 # Build mapping and extract just URLs
-                                url_to_link_text = dict(llms_links)
-                                extracted_llms_urls = [link for link, _ in llms_links]
+                                url_to_link_text = dict(same_domain_links)
+                                extracted_urls = [link for link, _ in same_domain_links]
 
-                                logger.info(f"Following {len(extracted_llms_urls)} linked llms.txt files")
+                                logger.info(f"Following {len(extracted_urls)} same-domain links from llms.txt")
 
                                 # Notify user about linked files being crawled
                                 await update_crawl_progress(
                                     60,  # 60% of crawling stage
-                                    f"Found {len(extracted_llms_urls)} linked llms.txt files, crawling them now...",
+                                    f"Found {len(extracted_urls)} links in llms.txt, crawling them now...",
                                     crawl_type="llms_txt_linked_files",
-                                    linked_files=extracted_llms_urls
+                                    linked_files=extracted_urls
                                 )
 
-                                # Crawl linked llms.txt files (no recursion, just one level)
+                                # Crawl all same-domain links from llms.txt (no recursion, just one level)
                                 batch_results = await self.crawl_batch_with_progress(
-                                    extracted_llms_urls,
+                                    extracted_urls,
                                     max_concurrent=request.get('max_concurrent'),
                                     progress_callback=await self._create_crawl_progress_callback("crawling"),
                                     link_text_fallbacks=url_to_link_text,
                                 )
 
-                                # Combine original llms.txt with linked files
+                                # Combine original llms.txt with linked pages
                                 crawl_results.extend(batch_results)
-                                crawl_type = "llms_txt_with_linked_files"
-                                logger.info(f"llms.txt crawling completed: {len(crawl_results)} total files (1 main + {len(batch_results)} linked)")
+                                crawl_type = "llms_txt_with_linked_pages"
+                                logger.info(f"llms.txt crawling completed: {len(crawl_results)} total pages (1 llms.txt + {len(batch_results)} linked pages)")
                                 return crawl_results, crawl_type
 
                         # For non-llms.txt discovery targets (sitemaps, robots.txt), keep single-file mode

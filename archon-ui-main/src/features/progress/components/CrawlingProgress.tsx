@@ -12,6 +12,7 @@ import { Button } from "../../ui/primitives";
 import { cn } from "../../ui/primitives/styles";
 import { useCrawlProgressPolling } from "../hooks";
 import type { ActiveOperation } from "../types/progress";
+import { isValidHttpUrl } from "../utils/urlValidation";
 
 interface CrawlingProgressProps {
   onSwitchToBrowse: () => void;
@@ -247,45 +248,57 @@ export const CrawlingProgress: React.FC<CrawlingProgressProps> = ({ onSwitchToBr
                   </div>
 
                   {/* Discovery Information */}
-                  {(operation as any).discovered_file && (
+                  {operation.discovered_file && (
                     <div className="pt-2 border-t border-white/10">
                       <div className="flex items-center gap-2 mb-2">
                         <span className="text-xs font-semibold text-cyan-400">Discovery Result</span>
-                        {(operation as any).discovered_file_type && (
+                        {operation.discovered_file_type && (
                           <span className="px-2 py-0.5 text-xs rounded bg-cyan-500/10 border border-cyan-500/20 text-cyan-300">
-                            {(operation as any).discovered_file_type}
+                            {operation.discovered_file_type}
                           </span>
                         )}
                       </div>
-                      <a
-                        href={(operation as any).discovered_file}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="text-sm text-gray-400 hover:text-cyan-400 transition-colors truncate block"
-                      >
-                        {(operation as any).discovered_file}
-                      </a>
+                      {isValidHttpUrl(operation.discovered_file) ? (
+                        <a
+                          href={operation.discovered_file}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          className="text-sm text-gray-400 hover:text-cyan-400 transition-colors truncate block"
+                        >
+                          {operation.discovered_file}
+                        </a>
+                      ) : (
+                        <span className="text-sm text-gray-400 truncate block">
+                          {operation.discovered_file}
+                        </span>
+                      )}
                     </div>
                   )}
 
                   {/* Linked Files */}
-                  {(operation as any).linked_files && (operation as any).linked_files.length > 0 && (
+                  {operation.linked_files && operation.linked_files.length > 0 && (
                     <div className="pt-2 border-t border-white/10">
                       <div className="text-xs font-semibold text-cyan-400 mb-2">
-                        Following {(operation as any).linked_files.length} Linked File
-                        {(operation as any).linked_files.length > 1 ? "s" : ""}
+                        Following {operation.linked_files.length} Linked File
+                        {operation.linked_files.length > 1 ? "s" : ""}
                       </div>
                       <div className="space-y-1 max-h-32 overflow-y-auto">
-                        {(operation as any).linked_files.map((file: string, idx: number) => (
-                          <a
-                            key={idx}
-                            href={file}
-                            target="_blank"
-                            rel="noopener noreferrer"
-                            className="text-xs text-gray-400 hover:text-cyan-400 transition-colors truncate block"
-                          >
-                            • {file}
-                          </a>
+                        {operation.linked_files.map((file: string, idx: number) => (
+                          isValidHttpUrl(file) ? (
+                            <a
+                              key={idx}
+                              href={file}
+                              target="_blank"
+                              rel="noopener noreferrer"
+                              className="text-xs text-gray-400 hover:text-cyan-400 transition-colors truncate block"
+                            >
+                              • {file}
+                            </a>
+                          ) : (
+                            <span key={idx} className="text-xs text-gray-400 truncate block">
+                              • {file}
+                            </span>
+                          )
                         ))}
                       </div>
                     </div>

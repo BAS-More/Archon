@@ -155,24 +155,21 @@ class TestURLHandler:
         """Test llms file variant detection."""
         handler = URLHandler()
         
-        # All llms variants
-        assert handler.is_llms_variant("https://example.com/llms-full.txt") is True
+        # Standard llms.txt spec variants (only txt files)
         assert handler.is_llms_variant("https://example.com/llms.txt") is True
-        assert handler.is_llms_variant("https://example.com/llms.md") is True
-        assert handler.is_llms_variant("https://example.com/llms.mdx") is True
-        assert handler.is_llms_variant("https://example.com/llms.markdown") is True
-        
+        assert handler.is_llms_variant("https://example.com/llms-full.txt") is True
+
         # Case sensitivity
         assert handler.is_llms_variant("https://example.com/LLMS.TXT") is True
-        assert handler.is_llms_variant("https://example.com/Llms.Md") is True
-        
+        assert handler.is_llms_variant("https://example.com/LLMS-FULL.TXT") is True
+
         # With paths (should still detect)
         assert handler.is_llms_variant("https://example.com/docs/llms.txt") is True
-        assert handler.is_llms_variant("https://example.com/public/llms.md") is True
-        
+        assert handler.is_llms_variant("https://example.com/public/llms-full.txt") is True
+
         # With query parameters
         assert handler.is_llms_variant("https://example.com/llms.txt?version=1") is True
-        assert handler.is_llms_variant("https://example.com/llms.md#section") is True
+        assert handler.is_llms_variant("https://example.com/llms-full.txt#section") is True
         
         # Not llms files
         assert handler.is_llms_variant("https://example.com/llms") is False
@@ -193,9 +190,9 @@ class TestURLHandler:
         assert handler.is_well_known_file("https://example.com/.well-known/security.txt") is True
         assert handler.is_well_known_file("https://example.com/.well-known/change-password") is True
         
-        # Case sensitivity (path should be case sensitive)
-        assert handler.is_well_known_file("https://example.com/.WELL-KNOWN/ai.txt") is True
-        assert handler.is_well_known_file("https://example.com/.Well-Known/ai.txt") is True
+        # Case sensitivity - RFC 8615 requires lowercase .well-known
+        assert handler.is_well_known_file("https://example.com/.WELL-KNOWN/ai.txt") is False
+        assert handler.is_well_known_file("https://example.com/.Well-Known/ai.txt") is False
         
         # With query parameters
         assert handler.is_well_known_file("https://example.com/.well-known/ai.txt?v=1") is True

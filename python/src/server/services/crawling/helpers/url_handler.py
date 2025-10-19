@@ -405,13 +405,10 @@ class URLHandler:
 
             # Check for specific link collection filenames
             # Note: "full-*" or "*-full" patterns are NOT link collections - they contain complete content, not just links
+            # Only includes commonly used formats found in the wild
             link_collection_patterns = [
                 # .txt variants - files that typically contain lists of links
                 'llms.txt', 'links.txt', 'resources.txt', 'references.txt',
-                # .md/.mdx/.markdown variants
-                'llms.md', 'links.md', 'resources.md', 'references.md',
-                'llms.mdx', 'links.mdx', 'resources.mdx', 'references.mdx',
-                'llms.markdown', 'links.markdown', 'resources.markdown', 'references.markdown',
             ]
 
             # Direct filename match
@@ -421,7 +418,7 @@ class URLHandler:
 
             # Pattern-based detection for variations, but exclude "full" variants
             # Only match files that are likely link collections, not complete content files
-            if filename.endswith(('.txt', '.md', '.mdx', '.markdown')):
+            if filename.endswith('.txt'):
                 # Exclude files with "full" as standalone token (avoid false positives like "helpful.md")
                 import re
                 if not re.search(r'(^|[._-])full([._-]|$)', filename):
@@ -650,8 +647,8 @@ class URLHandler:
             path = parsed.path.lower()
             filename = path.split('/')[-1] if '/' in path else path
 
-            # Check for exact llms file variants (llms.txt, llms.md, etc.)
-            llms_variants = ['llms-full.txt', 'llms.txt', 'llms.md', 'llms.mdx', 'llms.markdown']
+            # Check for exact llms file variants (only standard spec files)
+            llms_variants = ['llms.txt', 'llms-full.txt']
             if filename in llms_variants:
                 return True
 
@@ -668,6 +665,7 @@ class URLHandler:
     def is_well_known_file(url: str) -> bool:
         """
         Check if a URL is a .well-known/* file with error handling.
+        Per RFC 8615, the path is case-sensitive and must be lowercase.
 
         Args:
             url: URL to check
@@ -677,8 +675,8 @@ class URLHandler:
         """
         try:
             parsed = urlparse(url)
-            # Normalize to lowercase and ignore query/fragment
-            path = parsed.path.lower()
+            # RFC 8615: path segments are case-sensitive, must be lowercase
+            path = parsed.path
             # Only detect .well-known files at root level
             return path.startswith('/.well-known/') and path.count('/.well-known/') == 1
         except Exception as e:

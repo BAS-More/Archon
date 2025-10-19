@@ -114,6 +114,10 @@ export interface ActiveOperation {
     code_examples_found?: number;
     current_operation?: string;
   };
+  // Discovery information
+  discovered_file?: string;
+  discovered_file_type?: string;
+  linked_files?: string[];
 }
 
 export interface ActiveOperationsResponse {
