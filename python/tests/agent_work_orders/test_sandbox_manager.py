@@ -7,6 +7,7 @@ from tempfile import TemporaryDirectory
 
 from src.agent_work_orders.models import SandboxSetupError, SandboxType
 from src.agent_work_orders.sandbox_manager.git_branch_sandbox import GitBranchSandbox
+from src.agent_work_orders.sandbox_manager.git_worktree_sandbox import GitWorktreeSandbox
 from src.agent_work_orders.sandbox_manager.sandbox_factory import SandboxFactory
 
 
@@ -196,3 +197,157 @@ def test_sandbox_factory_not_implemented():
             repository_url="https://github.com/owner/repo",
             sandbox_identifier="sandbox-test",
         )
+
+
+# GitWorktreeSandbox Tests
+
+
+@pytest.mark.asyncio
+async def test_git_worktree_sandbox_setup_success():
+    """Test successful worktree sandbox setup"""
+    sandbox = GitWorktreeSandbox(
+        repository_url="https://github.com/owner/repo",
+        sandbox_identifier="wo-test123",
+    )
+
+    # Mock port allocation
+    with patch(
+        "src.agent_work_orders.sandbox_manager.git_worktree_sandbox.find_next_available_ports",
+        return_value=(9107, 9207),
+    ), patch(
+        "src.agent_work_orders.sandbox_manager.git_worktree_sandbox.create_worktree",
+        return_value=("/tmp/worktree/path", None),
+    ), patch(
+        "src.agent_work_orders.sandbox_manager.git_worktree_sandbox.setup_worktree_environment",
+    ):
+        await sandbox.setup()
+
+    assert sandbox.backend_port == 9107
+    assert sandbox.frontend_port == 9207
+
+
+@pytest.mark.asyncio
+async def test_git_worktree_sandbox_setup_failure():
+    """Test failed worktree sandbox setup"""
+    sandbox = GitWorktreeSandbox(
+        repository_url="https://github.com/owner/repo",
+        sandbox_identifier="wo-test123",
+    )
+
+    # Mock port allocation success but worktree creation failure
+    with patch(
+        "src.agent_work_orders.sandbox_manager.git_worktree_sandbox.find_next_available_ports",
+        return_value=(9107, 9207),
+    ), patch(
+        "src.agent_work_orders.sandbox_manager.git_worktree_sandbox.create_worktree",
+        return_value=(None, "Failed to create worktree"),
+    ):
+        with pytest.raises(SandboxSetupError) as exc_info:
+            await sandbox.setup()
+
+        assert "Failed to create worktree" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_git_worktree_sandbox_execute_command_success():
+    """Test successful command execution in worktree sandbox"""
+    with TemporaryDirectory() as tmpdir:
+        sandbox = GitWorktreeSandbox(
+            repository_url="https://github.com/owner/repo",
+            sandbox_identifier="wo-test123",
+        )
+        sandbox.working_dir = tmpdir
+
+        # Mock subprocess
+        mock_process = MagicMock()
+        mock_process.returncode = 0
+        mock_process.communicate = AsyncMock(return_value=(b"Command output", b""))
+
+        with patch("asyncio.create_subprocess_shell", return_value=mock_process):
+            result = await sandbox.execute_command("echo 'test'", timeout=10)
+
+        assert result.success is True
+        assert result.exit_code == 0
+        assert result.stdout == "Command output"
+
+
+@pytest.mark.asyncio
+async def test_git_worktree_sandbox_execute_command_timeout():
+    """Test command execution timeout in worktree sandbox"""
+    import asyncio
+
+    with TemporaryDirectory() as tmpdir:
+        sandbox = GitWorktreeSandbox(
+            repository_url="https://github.com/owner/repo",
+            sandbox_identifier="wo-test123",
+        )
+        sandbox.working_dir = tmpdir
+
+        # Mock subprocess that times out
+        mock_process = MagicMock()
+        mock_process.kill = MagicMock()
+        mock_process.wait = AsyncMock()
+
+        async def mock_communicate():
+            await asyncio.sleep(10)
+            return (b"", b"")
+
+        mock_process.communicate = mock_communicate
+
+        with patch("asyncio.create_subprocess_shell", return_value=mock_process):
+            result = await sandbox.execute_command("sleep 100", timeout=0.1)
+
+        assert result.success is False
+        assert result.exit_code == -1
+        assert "timed out" in result.error_message.lower()
+
+
+@pytest.mark.asyncio
+async def test_git_worktree_sandbox_get_git_branch_name():
+    """Test getting current git branch name in worktree"""
+    with TemporaryDirectory() as tmpdir:
+        sandbox = GitWorktreeSandbox(
+            repository_url="https://github.com/owner/repo",
+            sandbox_identifier="wo-test123",
+        )
+        sandbox.working_dir = tmpdir
+
+        with patch(
+            "src.agent_work_orders.sandbox_manager.git_worktree_sandbox.get_current_branch",
+            new=AsyncMock(return_value="feat-wo-test123"),
+        ):
+            branch = await sandbox.get_git_branch_name()
+
+        assert branch == "feat-wo-test123"
+
+
+@pytest.mark.asyncio
+async def test_git_worktree_sandbox_cleanup():
+    """Test worktree sandbox cleanup"""
+    sandbox = GitWorktreeSandbox(
+        repository_url="https://github.com/owner/repo",
+        sandbox_identifier="wo-test123",
+    )
+
+    with patch(
+        "src.agent_work_orders.sandbox_manager.git_worktree_sandbox.remove_worktree",
+        return_value=(True, None),
+    ):
+        await sandbox.cleanup()
+
+    # No exception should be raised
+
+
+def test_sandbox_factory_git_worktree():
+    """Test creating git worktree sandbox via factory"""
+    factory = SandboxFactory()
+
+    sandbox = factory.create_sandbox(
+        sandbox_type=SandboxType.GIT_WORKTREE,
+        repository_url="https://github.com/owner/repo",
+        sandbox_identifier="wo-test123",
+    )
+
+    assert isinstance(sandbox, GitWorktreeSandbox)
+    assert sandbox.repository_url == "https://github.com/owner/repo"
+    assert sandbox.sandbox_identifier == "wo-test123"
