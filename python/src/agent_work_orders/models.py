@@ -28,7 +28,7 @@ class SandboxType(str, Enum):
     """Sandbox environment types"""
 
     GIT_BRANCH = "git_branch"
-    GIT_WORKTREE = "git_worktree"  # Fully implemented - recommended for concurrent execution
+    GIT_WORKTREE = "git_worktree"  # Placeholder for Phase 2+
     E2B = "e2b"  # Placeholder for Phase 2+
     DAGGER = "dagger"  # Placeholder for Phase 2+
 
@@ -102,10 +102,7 @@ class CreateAgentWorkOrderRequest(BaseModel):
     """
 
     repository_url: str = Field(..., description="Git repository URL")
-    sandbox_type: SandboxType = Field(
-        default=SandboxType.GIT_WORKTREE,
-        description="Sandbox environment type (defaults to git_worktree for efficient concurrent execution)"
-    )
+    sandbox_type: SandboxType = Field(..., description="Sandbox environment type")
     user_request: str = Field(..., description="User's description of the work to be done")
     selected_commands: list[str] = Field(
         default=["create-branch", "planning", "execute", "commit", "create-pr"],

@@ -52,6 +52,8 @@ This new vision for Archon replaces the old one (the agenteer). Archon used to b
   </a>
   <br/>
   <em>📺 Click to watch the setup tutorial on YouTube</em>
+  <br/>
+  <a href="./archon-example-workflow">-> Example AI coding workflow in the video <-</a>
 </p>
 
 ### Prerequisites
