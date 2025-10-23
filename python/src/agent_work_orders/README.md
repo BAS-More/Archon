@@ -95,6 +95,7 @@ docker compose up -d
 | `ARCHON_MCP_URL` | Auto | MCP server URL (auto-configured by discovery mode) |
 | `CLAUDE_CLI_PATH` | `claude` | Path to Claude CLI executable |
 | `GH_CLI_PATH` | `gh` | Path to GitHub CLI executable |
+| `GH_TOKEN` | - | GitHub Personal Access Token for gh CLI authentication (required for PR creation) |
 | `LOG_LEVEL` | `INFO` | Logging level |
 | `STATE_STORAGE_TYPE` | `memory` | State storage (`memory` or `file`) - Use `file` for persistence |
 | `FILE_STATE_DIRECTORY` | `agent-work-orders-state` | Directory for file-based state (when `STATE_STORAGE_TYPE=file`) |
@@ -166,6 +167,32 @@ docker compose logs -f archon-agent-work-orders
 ```
 
 ## Troubleshooting
+
+### GitHub Authentication (PR Creation Fails)
+
+The `gh` CLI requires authentication for PR creation. There are two options:
+
+**Option 1: PAT Token (Recommended for Docker)**
+
+Set `GH_TOKEN` or `GITHUB_TOKEN` environment variable with your Personal Access Token:
+
+```bash
+# In .env file
+GITHUB_PAT_TOKEN=ghp_your_token_here
+
+# Docker compose automatically maps GITHUB_PAT_TOKEN to GH_TOKEN
+```
+
+The token needs these scopes:
+- `repo` (full control of private repositories)
+- `workflow` (if creating PRs with workflow files)
+
+**Option 2: gh auth login (Local development only)**
+
+```bash
+gh auth login
+# Follow interactive prompts
+```
 
 ### Claude CLI Not Found
 

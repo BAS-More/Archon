@@ -143,6 +143,27 @@ async def health_check() -> dict[str, Any]:
         "available": shutil.which("git") is not None,
     }
 
+    # Check GitHub CLI authentication
+    try:
+        result = subprocess.run(
+            [config.GH_CLI_PATH, "auth", "status"],
+            capture_output=True,
+            text=True,
+            timeout=5,
+        )
+        # gh auth status returns 0 if authenticated
+        health_status["dependencies"]["github_cli"] = {
+            "available": shutil.which(config.GH_CLI_PATH) is not None,
+            "authenticated": result.returncode == 0,
+            "token_configured": os.getenv("GH_TOKEN") is not None or os.getenv("GITHUB_TOKEN") is not None,
+        }
+    except Exception as e:
+        health_status["dependencies"]["github_cli"] = {
+            "available": False,
+            "authenticated": False,
+            "error": str(e),
+        }
+
     # Check Archon server connectivity (if configured)
     archon_server_url = os.getenv("ARCHON_SERVER_URL")
     if archon_server_url:

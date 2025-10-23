@@ -15,7 +15,7 @@ configure_structured_logging(config.LOG_LEVEL)
 
 app = FastAPI(
     title="Agent Work Orders API",
-    description="PRD-compliant agent work order system for workflow-based agent execution",
+    description="Agent work order system for workflow-based agent execution",
     version="0.1.0",
 )
 
