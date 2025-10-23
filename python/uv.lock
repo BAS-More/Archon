@@ -164,6 +164,7 @@ name = "archon"
 version = "0.1.0"
 source = { virtual = "." }
 dependencies = [
+    { name = "sse-starlette" },
     { name = "structlog" },
 ]
 
@@ -269,7 +270,10 @@ server-reranking = [
 ]
 
 [package.metadata]
-requires-dist = [{ name = "structlog", specifier = ">=25.4.0" }]
+requires-dist = [
+    { name = "sse-starlette", specifier = ">=2.3.3" },
+    { name = "structlog", specifier = ">=25.4.0" },
+]
 
 [package.metadata.requires-dev]
 agent-work-orders = [

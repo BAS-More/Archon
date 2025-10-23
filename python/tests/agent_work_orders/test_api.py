@@ -1,17 +1,16 @@
 """Integration Tests for API Endpoints"""
 
-import pytest
 from datetime import datetime
-from fastapi.testclient import TestClient
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, patch
 
-from src.agent_work_orders.server import app
+from fastapi.testclient import TestClient
+
 from src.agent_work_orders.models import (
-    AgentWorkOrderStatus,
     AgentWorkflowType,
+    AgentWorkOrderStatus,
     SandboxType,
 )
-
+from src.agent_work_orders.server import app
 
 client = TestClient(app)
 
@@ -248,14 +247,19 @@ def test_send_prompt_to_agent():
 
 
 def test_get_logs():
-    """Test getting logs (placeholder)"""
-    response = client.get("/api/agent-work-orders/wo-test123/logs")
+    """Test getting logs from log buffer"""
+    with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
+        # Mock work order exists
+        mock_repo.get = AsyncMock(return_value=({"id": "wo-test123"}, {}))
 
-    # Currently returns empty logs (Phase 2+)
-    assert response.status_code == 200
-    data = response.json()
-    assert "log_entries" in data
-    assert len(data["log_entries"]) == 0
+        response = client.get("/api/agent-work-orders/wo-test123/logs")
+
+        assert response.status_code == 200
+        data = response.json()
+        assert "log_entries" in data
+        assert "total" in data
+        assert "limit" in data
+        assert "offset" in data
 
 
 def test_verify_repository_success():

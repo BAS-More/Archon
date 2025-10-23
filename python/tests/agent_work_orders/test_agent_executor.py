@@ -1,10 +1,11 @@
 """Tests for Agent Executor"""
 
 import asyncio
-import pytest
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.agent_work_orders.agent_executor.agent_cli_executor import AgentCLIExecutor
 
@@ -258,8 +259,8 @@ def test_build_command_replaces_arguments_placeholder():
     executor = AgentCLIExecutor()
 
     # Create temp command file with $ARGUMENTS
-    import tempfile
     import os
+    import tempfile
 
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write("Classify this issue:\n\n$ARGUMENTS")
@@ -281,8 +282,8 @@ def test_build_command_replaces_positional_arguments():
     """Test that $1, $2, $3 are replaced with positional arguments"""
     executor = AgentCLIExecutor()
 
-    import tempfile
     import os
+    import tempfile
 
     with tempfile.NamedTemporaryFile(mode='w', suffix='.md', delete=False) as f:
         f.write("Issue: $1\nWorkOrder: $2\nData: $3")

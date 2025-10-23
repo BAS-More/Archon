@@ -6,7 +6,8 @@ FastAPI routes for agent work orders.
 import asyncio
 from datetime import datetime
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Query
+from sse_starlette.sse import EventSourceResponse
 
 from ..agent_executor.agent_cli_executor import AgentCLIExecutor
 from ..command_loader.claude_command_loader import ClaudeCommandLoader
@@ -27,8 +28,10 @@ from ..models import (
 from ..sandbox_manager.sandbox_factory import SandboxFactory
 from ..state_manager.repository_factory import create_repository
 from ..utils.id_generator import generate_work_order_id
+from ..utils.log_buffer import WorkOrderLogBuffer
 from ..utils.structured_logger import get_logger
 from ..workflow_engine.workflow_orchestrator import WorkflowOrchestrator
+from .sse_streams import stream_work_order_logs
 
 logger = get_logger(__name__)
 router = APIRouter()
@@ -39,6 +42,7 @@ agent_executor = AgentCLIExecutor()
 sandbox_factory = SandboxFactory()
 github_client = GitHubClient()
 command_loader = ClaudeCommandLoader()
+log_buffer = WorkOrderLogBuffer()
 orchestrator = WorkflowOrchestrator(
     agent_executor=agent_executor,
     sandbox_factory=sandbox_factory,
@@ -286,29 +290,116 @@ async def get_git_progress(agent_work_order_id: str) -> GitProgressSnapshot:
 @router.get("/{agent_work_order_id}/logs")
 async def get_agent_work_order_logs(
     agent_work_order_id: str,
-    limit: int = 100,
-    offset: int = 0,
+    limit: int = Query(100, ge=1, le=1000),
+    offset: int = Query(0, ge=0),
+    level: str | None = Query(None, description="Filter by log level (info, warning, error, debug)"),
+    step: str | None = Query(None, description="Filter by step name"),
 ) -> dict:
-    """Get structured logs for a work order
+    """Get buffered logs for a work order.
 
-    TODO Phase 2+: Implement log storage and retrieval
-    For MVP, returns empty logs.
+    Returns logs from the in-memory buffer. For real-time streaming, use the
+    /logs/stream endpoint.
+
+    Args:
+        agent_work_order_id: Work order ID
+        limit: Maximum number of logs to return (1-1000)
+        offset: Number of logs to skip for pagination
+        level: Optional log level filter
+        step: Optional step name filter
+
+    Returns:
+        Dictionary with log entries and pagination metadata
     """
     logger.info(
         "agent_logs_get_started",
         agent_work_order_id=agent_work_order_id,
         limit=limit,
         offset=offset,
+        level=level,
+        step=step,
     )
 
-    # TODO Phase 2+: Read from log files or Supabase
+    # Verify work order exists
+    work_order = await state_repository.get(agent_work_order_id)
+    if not work_order:
+        raise HTTPException(status_code=404, detail="Agent work order not found")
+
+    # Get logs from buffer
+    log_entries = log_buffer.get_logs(
+        work_order_id=agent_work_order_id,
+        level=level,
+        step=step,
+        limit=limit,
+        offset=offset,
+    )
+
     return {
         "agent_work_order_id": agent_work_order_id,
-        "log_entries": [],
-        "total": 0,
+        "log_entries": log_entries,
+        "total": log_buffer.get_log_count(agent_work_order_id),
         "limit": limit,
         "offset": offset,
     }
+
+
+@router.get("/{agent_work_order_id}/logs/stream")
+async def stream_agent_work_order_logs(
+    agent_work_order_id: str,
+    level: str | None = Query(None, description="Filter by log level (info, warning, error, debug)"),
+    step: str | None = Query(None, description="Filter by step name"),
+    since: str | None = Query(None, description="ISO timestamp - only return logs after this time"),
+) -> EventSourceResponse:
+    """Stream work order logs in real-time via Server-Sent Events.
+
+    Connects to a live stream that delivers logs as they are generated.
+    Connection stays open until work order completes or client disconnects.
+
+    Args:
+        agent_work_order_id: Work order ID
+        level: Optional log level filter (info, warning, error, debug)
+        step: Optional step name filter (exact match)
+        since: Optional ISO timestamp - only return logs after this time
+
+    Returns:
+        EventSourceResponse streaming log events
+
+    Examples:
+        curl -N http://localhost:8053/api/agent-work-orders/wo-123/logs/stream
+        curl -N "http://localhost:8053/api/agent-work-orders/wo-123/logs/stream?level=error"
+
+    Notes:
+        - Uses Server-Sent Events (SSE) protocol
+        - Sends heartbeat every 15 seconds to keep connection alive
+        - Automatically handles client disconnect
+        - Each event is JSON with timestamp, level, event, work_order_id, and extra fields
+    """
+    logger.info(
+        "agent_logs_stream_started",
+        agent_work_order_id=agent_work_order_id,
+        level=level,
+        step=step,
+        since=since,
+    )
+
+    # Verify work order exists
+    work_order = await state_repository.get(agent_work_order_id)
+    if not work_order:
+        raise HTTPException(status_code=404, detail="Agent work order not found")
+
+    # Create SSE stream
+    return EventSourceResponse(
+        stream_work_order_logs(
+            work_order_id=agent_work_order_id,
+            log_buffer=log_buffer,
+            level_filter=level,
+            step_filter=step,
+            since_timestamp=since,
+        ),
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @router.get("/{agent_work_order_id}/steps")

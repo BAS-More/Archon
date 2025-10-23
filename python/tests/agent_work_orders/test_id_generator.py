@@ -1,8 +1,8 @@
 """Tests for ID Generator"""
 
 from src.agent_work_orders.utils.id_generator import (
-    generate_work_order_id,
     generate_sandbox_identifier,
+    generate_work_order_id,
 )
 
 

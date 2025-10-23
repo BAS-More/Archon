@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 # Base dependencies - empty since we're using dependency groups
 dependencies = [
+    "sse-starlette>=2.3.3",
     "structlog>=25.4.0",
 ]
 

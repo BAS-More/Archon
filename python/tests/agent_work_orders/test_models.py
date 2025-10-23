@@ -1,14 +1,13 @@
 """Tests for Agent Work Orders Models"""
 
-import pytest
 from datetime import datetime
 
 from src.agent_work_orders.models import (
+    AgentWorkflowPhase,
+    AgentWorkflowType,
     AgentWorkOrder,
     AgentWorkOrderState,
     AgentWorkOrderStatus,
-    AgentWorkflowPhase,
-    AgentWorkflowType,
     CommandExecutionResult,
     CreateAgentWorkOrderRequest,
     SandboxType,

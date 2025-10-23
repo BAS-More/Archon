@@ -14,14 +14,20 @@ import httpx
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from .api.routes import router
+from .api.routes import log_buffer, router
 from .config import config
-from .utils.structured_logger import configure_structured_logging, get_logger
+from .utils.structured_logger import (
+    configure_structured_logging_with_buffer,
+    get_logger,
+)
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
     """Lifespan context manager for startup and shutdown tasks"""
+    # Configure structured logging with buffer for SSE streaming
+    configure_structured_logging_with_buffer(config.LOG_LEVEL, log_buffer)
+
     logger = get_logger(__name__)
 
     logger.info(
@@ -31,6 +37,9 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
             "service_discovery_mode": os.getenv("SERVICE_DISCOVERY_MODE", "local"),
         },
     )
+
+    # Start log buffer cleanup task
+    await log_buffer.start_cleanup_task()
 
     # Validate Claude CLI is available
     try:
@@ -84,9 +93,8 @@ async def lifespan(app: FastAPI) -> AsyncGenerator[None, None]:
 
     logger.info("Shutting down Agent Work Orders service")
 
-
-# Configure logging on startup
-configure_structured_logging(config.LOG_LEVEL)
+    # Stop log buffer cleanup task
+    await log_buffer.stop_cleanup_task()
 
 # Create FastAPI app with lifespan
 app = FastAPI(

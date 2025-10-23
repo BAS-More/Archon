@@ -3,8 +3,9 @@
 Tests the server entry point, health checks, and service discovery configuration.
 """
 
+from unittest.mock import AsyncMock, Mock, patch
+
 import pytest
-from unittest.mock import Mock, patch, AsyncMock
 from fastapi.testclient import TestClient
 
 
@@ -179,7 +180,6 @@ def test_router_included_with_prefix():
 @patch.dict("os.environ", {"SERVICE_DISCOVERY_MODE": "local"})
 def test_startup_logs_local_mode(caplog):
     """Test startup logs service discovery mode"""
-    from src.agent_work_orders.server import app
     from src.agent_work_orders.config import config
 
     # Verify config is set to local mode
@@ -191,6 +191,7 @@ def test_startup_logs_local_mode(caplog):
 def test_startup_logs_docker_mode(caplog):
     """Test startup logs docker_compose mode"""
     import importlib
+
     import src.agent_work_orders.config as config_module
     importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig

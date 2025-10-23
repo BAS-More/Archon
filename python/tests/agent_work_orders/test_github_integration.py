@@ -1,8 +1,9 @@
 """Tests for GitHub Integration"""
 
 import json
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.agent_work_orders.github_integration.github_client import GitHubClient
 from src.agent_work_orders.models import GitHubOperationError

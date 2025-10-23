@@ -1,7 +1,8 @@
 """Tests for Workflow Operations - Refactored Command Stitching Architecture"""
 
+from unittest.mock import AsyncMock, MagicMock
+
 import pytest
-from unittest.mock import AsyncMock, MagicMock, patch
 
 from src.agent_work_orders.models import (
     CommandExecutionResult,

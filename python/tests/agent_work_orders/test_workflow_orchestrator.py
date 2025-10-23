@@ -1,14 +1,13 @@
 """Tests for Workflow Orchestrator - Command Stitching Architecture"""
 
-import pytest
 from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.agent_work_orders.models import (
     AgentWorkOrderStatus,
     SandboxType,
     StepExecutionResult,
-    StepHistory,
-    WorkflowExecutionError,
     WorkflowStep,
 )
 from src.agent_work_orders.workflow_engine.workflow_orchestrator import WorkflowOrchestrator

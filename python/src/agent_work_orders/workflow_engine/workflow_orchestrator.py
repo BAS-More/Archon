@@ -3,6 +3,8 @@
 Main orchestration logic for workflow execution.
 """
 
+import time
+
 from ..agent_executor.agent_cli_executor import AgentCLIExecutor
 from ..command_loader.claude_command_loader import ClaudeCommandLoader
 from ..github_integration.github_client import GitHubClient
@@ -17,7 +19,11 @@ from ..state_manager.file_state_repository import FileStateRepository
 from ..state_manager.work_order_repository import WorkOrderRepository
 from ..utils.git_operations import get_commit_count, get_files_changed
 from ..utils.id_generator import generate_sandbox_identifier
-from ..utils.structured_logger import get_logger
+from ..utils.structured_logger import (
+    bind_work_order_context,
+    clear_work_order_context,
+    get_logger,
+)
 from . import workflow_operations
 
 logger = get_logger(__name__)
@@ -66,13 +72,24 @@ class WorkflowOrchestrator:
         if selected_commands is None:
             selected_commands = ["create-branch", "planning", "execute", "commit", "create-pr"]
 
+        # Bind work order context for structured logging
+        bind_work_order_context(agent_work_order_id)
+
         bound_logger = self._logger.bind(
             agent_work_order_id=agent_work_order_id,
             sandbox_type=sandbox_type.value,
             selected_commands=selected_commands,
         )
 
-        bound_logger.info("agent_work_order_started")
+        # Track workflow start time
+        workflow_start_time = time.time()
+        total_steps = len(selected_commands)
+
+        bound_logger.info(
+            "workflow_started",
+            total_steps=total_steps,
+            repository_url=repository_url,
+        )
 
         # Initialize step history and context
         step_history = StepHistory(agent_work_order_id=agent_work_order_id)
@@ -90,12 +107,17 @@ class WorkflowOrchestrator:
             )
 
             # Create sandbox
+            bound_logger.info("sandbox_setup_started", repository_url=repository_url)
             sandbox_identifier = generate_sandbox_identifier(agent_work_order_id)
             sandbox = self.sandbox_factory.create_sandbox(
                 sandbox_type, repository_url, sandbox_identifier
             )
             await sandbox.setup()
-            bound_logger.info("sandbox_created", sandbox_identifier=sandbox_identifier)
+            bound_logger.info(
+                "sandbox_setup_completed",
+                sandbox_identifier=sandbox_identifier,
+                working_dir=sandbox.working_dir,
+            )
 
             # Command mapping
             command_map = {
@@ -108,15 +130,29 @@ class WorkflowOrchestrator:
             }
 
             # Execute each command in sequence
-            for command_name in selected_commands:
+            for index, command_name in enumerate(selected_commands):
                 if command_name not in command_map:
                     raise WorkflowExecutionError(f"Unknown command: {command_name}")
 
-                bound_logger.info("command_execution_started", command=command_name)
+                # Calculate progress
+                step_number = index + 1
+                progress_pct = int((step_number / total_steps) * 100)
+                elapsed_seconds = int(time.time() - workflow_start_time)
+
+                bound_logger.info(
+                    "step_started",
+                    step=command_name,
+                    step_number=step_number,
+                    total_steps=total_steps,
+                    progress=f"{step_number}/{total_steps}",
+                    progress_pct=progress_pct,
+                    elapsed_seconds=elapsed_seconds,
+                )
 
                 command_func = command_map[command_name]
 
                 # Execute command
+                step_start_time = time.time()
                 result = await command_func(
                     executor=self.agent_executor,
                     command_loader=self.command_loader,
@@ -124,6 +160,7 @@ class WorkflowOrchestrator:
                     working_dir=sandbox.working_dir,
                     context=context,
                 )
+                step_duration = time.time() - step_start_time
 
                 # Save step result
                 step_history.steps.append(result)
@@ -133,10 +170,12 @@ class WorkflowOrchestrator:
 
                 # Log completion
                 bound_logger.info(
-                    "command_execution_completed",
-                    command=command_name,
+                    "step_completed",
+                    step=command_name,
+                    step_number=step_number,
+                    total_steps=total_steps,
                     success=result.success,
-                    duration=result.duration_seconds,
+                    duration_seconds=round(step_duration, 2),
                 )
 
                 # STOP on failure
@@ -199,11 +238,24 @@ class WorkflowOrchestrator:
 
             # Save final step history
             await self.state_repository.save_step_history(agent_work_order_id, step_history)
-            bound_logger.info("agent_work_order_completed", total_steps=len(step_history.steps))
+
+            total_duration = time.time() - workflow_start_time
+            bound_logger.info(
+                "workflow_completed",
+                total_steps=len(step_history.steps),
+                total_duration_seconds=round(total_duration, 2),
+            )
 
         except Exception as e:
             error_msg = str(e)
-            bound_logger.error("agent_work_order_failed", error=error_msg, exc_info=True)
+            total_duration = time.time() - workflow_start_time
+            bound_logger.exception(
+                "workflow_failed",
+                error=error_msg,
+                total_duration_seconds=round(total_duration, 2),
+                completed_steps=len(step_history.steps),
+                total_steps=total_steps,
+            )
 
             # Save partial step history even on failure
             await self.state_repository.save_step_history(agent_work_order_id, step_history)
@@ -218,14 +270,17 @@ class WorkflowOrchestrator:
             # Cleanup sandbox
             if sandbox:
                 try:
+                    bound_logger.info("sandbox_cleanup_started")
                     await sandbox.cleanup()
                     bound_logger.info("sandbox_cleanup_completed")
                 except Exception as cleanup_error:
-                    bound_logger.error(
+                    bound_logger.exception(
                         "sandbox_cleanup_failed",
                         error=str(cleanup_error),
-                        exc_info=True,
                     )
+
+            # Clear work order context to prevent leakage
+            clear_work_order_context()
 
     async def _calculate_git_stats(
         self, branch_name: str | None, repo_path: str

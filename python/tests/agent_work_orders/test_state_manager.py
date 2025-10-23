@@ -1,12 +1,13 @@
 """Tests for State Manager"""
 
-import pytest
 from datetime import datetime
 
+import pytest
+
 from src.agent_work_orders.models import (
+    AgentWorkflowType,
     AgentWorkOrderState,
     AgentWorkOrderStatus,
-    AgentWorkflowType,
     SandboxType,
     StepExecutionResult,
     StepHistory,

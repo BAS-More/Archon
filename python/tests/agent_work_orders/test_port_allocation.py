@@ -1,16 +1,17 @@
 """Tests for Port Allocation with 10-Port Ranges"""
 
-import pytest
 from unittest.mock import patch
 
+import pytest
+
 from src.agent_work_orders.utils.port_allocation import (
+    MAX_CONCURRENT_WORK_ORDERS,
+    PORT_BASE,
+    PORT_RANGE_SIZE,
+    create_ports_env_file,
+    find_available_port_range,
     get_port_range_for_work_order,
     is_port_available,
-    find_available_port_range,
-    create_ports_env_file,
-    PORT_RANGE_SIZE,
-    PORT_BASE,
-    MAX_CONCURRENT_WORK_ORDERS,
 )
 
 

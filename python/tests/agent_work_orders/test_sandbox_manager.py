@@ -1,9 +1,10 @@
 """Tests for Sandbox Manager"""
 
-import pytest
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
 from tempfile import TemporaryDirectory
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import pytest
 
 from src.agent_work_orders.models import SandboxSetupError, SandboxType
 from src.agent_work_orders.sandbox_manager.git_branch_sandbox import GitBranchSandbox

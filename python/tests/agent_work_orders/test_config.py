@@ -4,8 +4,9 @@ Tests configuration loading, service discovery, and URL construction.
 """
 
 import importlib
-import pytest
 from unittest.mock import patch
+
+import pytest
 
 
 @pytest.mark.unit
@@ -114,7 +115,6 @@ def test_config_cors_origins_override():
 @pytest.mark.unit
 def test_config_ensure_temp_dir(tmp_path):
     """Test ensure_temp_dir creates directory"""
-    import os
     import src.agent_work_orders.config as config_module
 
     # Use tmp_path for testing
