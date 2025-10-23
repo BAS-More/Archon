@@ -14,7 +14,7 @@ interface WorkflowStepButtonProps {
 const getColorValue = (color: string) => {
   const colorValues = {
     purple: "rgb(168,85,247)",
-    green: "rgb(16,185,129)",
+    green: "rgb(34,197,94)",
     blue: "rgb(59,130,246)",
     cyan: "rgb(34,211,238)",
   };
@@ -38,11 +38,11 @@ export const WorkflowStepButton: React.FC<WorkflowStepButtonProps> = ({
       innerGlow: "shadow-[inset_0_0_10px_rgba(168,85,247,0.8)]",
     },
     green: {
-      border: "border-emerald-400",
-      glow: "shadow-[0_0_15px_rgba(16,185,129,0.8)]",
-      glowHover: "hover:shadow-[0_0_25px_rgba(16,185,129,1)]",
-      fill: "bg-emerald-400",
-      innerGlow: "shadow-[inset_0_0_10px_rgba(16,185,129,0.8)]",
+      border: "border-green-400",
+      glow: "shadow-[0_0_15px_rgba(34,197,94,0.8)]",
+      glowHover: "hover:shadow-[0_0_25px_rgba(34,197,94,1)]",
+      fill: "bg-green-400",
+      innerGlow: "shadow-[inset_0_0_10px_rgba(34,197,94,0.8)]",
     },
     blue: {
       border: "border-blue-400",

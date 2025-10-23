@@ -127,7 +127,11 @@ export const AgentWorkOrderExample = () => {
             className="text-cyan-600 dark:text-cyan-400 hover:bg-cyan-500/10"
             aria-label={showDetails ? "Hide details" : "Show details"}
           >
-            {showDetails ? <ChevronUp className="w-4 h-4 mr-1" /> : <ChevronDown className="w-4 h-4 mr-1" />}
+            {showDetails ? (
+              <ChevronUp className="w-4 h-4 mr-1" aria-hidden="true" />
+            ) : (
+              <ChevronDown className="w-4 h-4 mr-1" aria-hidden="true" />
+            )}
             Details
           </Button>
         </div>
@@ -177,7 +181,7 @@ export const AgentWorkOrderExample = () => {
                             className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 bg-orange-500 hover:bg-orange-600 rounded-full p-1.5 shadow-lg shadow-orange-500/50 border-2 border-orange-400 transition-colors cursor-pointer"
                             aria-label="Remove Human-in-Loop checkpoint"
                           >
-                            <User className="w-3.5 h-3.5 text-white" />
+                            <User className="w-3.5 h-3.5 text-white" aria-hidden="true" />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>Click to remove</TooltipContent>
@@ -196,7 +200,7 @@ export const AgentWorkOrderExample = () => {
                             className="absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 w-8 h-8 rounded-full bg-orange-500 hover:bg-orange-600 transition-colors shadow-lg shadow-orange-500/50 flex items-center justify-center text-white"
                             aria-label="Add Human-in-Loop step"
                           >
-                            <Plus className="w-4 h-4" />
+                            <Plus className="w-4 h-4" aria-hidden="true" />
                           </button>
                         </TooltipTrigger>
                         <TooltipContent>Add Human-in-Loop</TooltipContent>
@@ -237,7 +241,7 @@ export const AgentWorkOrderExample = () => {
                   duration: 0.2,
                   ease: "easeOut",
                 }}
-                className="grid grid-cols-2 gap-6 pt-6 border-t border-gray-200/50 dark:border-gray-700/30"
+                className="grid grid-cols-1 md:grid-cols-2 gap-6 pt-6 border-t border-gray-200/50 dark:border-gray-700/30"
               >
                 {/* Left Column */}
                 <div className="space-y-4">
@@ -263,7 +267,7 @@ export const AgentWorkOrderExample = () => {
                           className="text-sm font-medium text-cyan-600 dark:text-cyan-400 hover:underline inline-flex items-center gap-1 mt-0.5"
                         >
                           https://github.com/Wirasm/dylan
-                          <ExternalLink className="w-3 h-3" />
+                          <ExternalLink className="w-3 h-3" aria-hidden="true" />
                         </a>
                       </div>
                       <div>

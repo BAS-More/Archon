@@ -66,7 +66,7 @@ export const StepHistoryCard = ({ step, isExpanded, onToggle, document }: StepHi
             <h4 className="font-semibold text-gray-900 dark:text-white">{step.stepName}</h4>
             {step.isHumanInLoop && (
               <span className="inline-flex items-center gap-1 px-2 py-1 text-xs font-medium rounded-md bg-orange-500/10 text-orange-600 dark:text-orange-400 border border-orange-500/20">
-                <AlertCircle className="w-3 h-3" />
+                <AlertCircle className="w-3 h-3" aria-hidden="true" />
                 Human-in-Loop
               </span>
             )}
@@ -249,7 +249,7 @@ export const StepHistoryCard = ({ step, isExpanded, onToggle, document }: StepHi
                           "shadow-lg shadow-green-500/20",
                         )}
                       >
-                        <CheckCircle2 className="w-4 h-4 mr-2" />
+                        <CheckCircle2 className="w-4 h-4 mr-2" aria-hidden="true" />
                         Approve and Move to Next Step
                       </Button>
                     </div>
