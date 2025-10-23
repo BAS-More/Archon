@@ -266,8 +266,9 @@ def remove_worktree(
 
 def setup_worktree_environment(
     worktree_path: str,
-    backend_port: int,
-    frontend_port: int,
+    start_port: int,
+    end_port: int,
+    available_ports: list[int],
     logger: "structlog.stdlib.BoundLogger"
 ) -> None:
     """Set up worktree environment by creating .ports.env file.
@@ -277,9 +278,13 @@ def setup_worktree_environment(
 
     Args:
         worktree_path: Path to the worktree
-        backend_port: Backend port number
-        frontend_port: Frontend port number
+        start_port: Start of port range
+        end_port: End of port range
+        available_ports: List of available ports in range
         logger: Logger instance
     """
-    create_ports_env_file(worktree_path, backend_port, frontend_port)
-    logger.info(f"Created .ports.env with Backend: {backend_port}, Frontend: {frontend_port}")
+    create_ports_env_file(worktree_path, start_port, end_port, available_ports)
+    logger.info(
+        f"Created .ports.env with port range {start_port}-{end_port} "
+        f"({len(available_ports)} available ports)"
+    )

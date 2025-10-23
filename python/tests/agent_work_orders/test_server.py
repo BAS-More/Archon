@@ -190,6 +190,9 @@ def test_startup_logs_local_mode(caplog):
 @patch.dict("os.environ", {"SERVICE_DISCOVERY_MODE": "docker_compose"})
 def test_startup_logs_docker_mode(caplog):
     """Test startup logs docker_compose mode"""
+    import importlib
+    import src.agent_work_orders.config as config_module
+    importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig
 
     # Create fresh config instance with env var

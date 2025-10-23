@@ -164,7 +164,7 @@ class WorkflowOrchestrator:
                     branch_name = context.get("create-branch")
                     git_stats = await self._calculate_git_stats(
                         branch_name,
-                        sandbox.get_working_directory()
+                        sandbox.working_dir
                     )
 
                     await self.state_repository.update_status(
@@ -188,7 +188,7 @@ class WorkflowOrchestrator:
             branch_name = context.get("create-branch")
             if branch_name:
                 git_stats = await self._calculate_git_stats(
-                    branch_name, sandbox.get_working_directory()
+                    branch_name, sandbox.working_dir
                 )
                 await self.state_repository.update_status(
                     agent_work_order_id,

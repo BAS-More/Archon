@@ -9,7 +9,7 @@ import time
 
 from ..models import CommandExecutionResult, SandboxSetupError
 from ..utils.git_operations import get_current_branch
-from ..utils.port_allocation import find_next_available_ports
+from ..utils.port_allocation import find_available_port_range
 from ..utils.structured_logger import get_logger
 from ..utils.worktree_operations import (
     create_worktree,
@@ -33,8 +33,9 @@ class GitWorktreeSandbox:
         self.repository_url = repository_url
         self.sandbox_identifier = sandbox_identifier
         self.working_dir = get_worktree_path(repository_url, sandbox_identifier)
-        self.backend_port: int | None = None
-        self.frontend_port: int | None = None
+        self.port_range_start: int | None = None
+        self.port_range_end: int | None = None
+        self.available_ports: list[int] = []
         self._logger = logger.bind(
             sandbox_identifier=sandbox_identifier,
             repository_url=repository_url,
@@ -43,19 +44,21 @@ class GitWorktreeSandbox:
     async def setup(self) -> None:
         """Create worktree and set up isolated environment
 
-        Creates worktree from origin/main and allocates unique ports.
+        Creates worktree from origin/main and allocates a port range.
+        Each work order gets 10 ports for flexibility.
         """
         self._logger.info("worktree_sandbox_setup_started")
 
         try:
-            # Allocate ports deterministically
-            self.backend_port, self.frontend_port = find_next_available_ports(
+            # Allocate port range deterministically
+            self.port_range_start, self.port_range_end, self.available_ports = find_available_port_range(
                 self.sandbox_identifier
             )
             self._logger.info(
-                "ports_allocated",
-                backend_port=self.backend_port,
-                frontend_port=self.frontend_port,
+                "port_range_allocated",
+                port_range_start=self.port_range_start,
+                port_range_end=self.port_range_end,
+                available_ports_count=len(self.available_ports),
             )
 
             # Create worktree with temporary branch name
@@ -75,16 +78,17 @@ class GitWorktreeSandbox:
             # Set up environment with port configuration
             setup_worktree_environment(
                 worktree_path,
-                self.backend_port,
-                self.frontend_port,
+                self.port_range_start,
+                self.port_range_end,
+                self.available_ports,
                 self._logger
             )
 
             self._logger.info(
                 "worktree_sandbox_setup_completed",
                 working_dir=self.working_dir,
-                backend_port=self.backend_port,
-                frontend_port=self.frontend_port,
+                port_range=f"{self.port_range_start}-{self.port_range_end}",
+                available_ports_count=len(self.available_ports),
             )
 
         except Exception as e:

@@ -3,6 +3,7 @@
 Tests configuration loading, service discovery, and URL construction.
 """
 
+import importlib
 import pytest
 from unittest.mock import patch
 
@@ -38,6 +39,8 @@ def test_config_local_service_discovery():
 @patch.dict("os.environ", {"SERVICE_DISCOVERY_MODE": "docker_compose"})
 def test_config_docker_service_discovery():
     """Test docker_compose service discovery mode"""
+    import src.agent_work_orders.config as config_module
+    importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig
 
     config = AgentWorkOrdersConfig()
@@ -73,6 +76,8 @@ def test_config_explicit_mcp_url_override():
 @patch.dict("os.environ", {"CLAUDE_CLI_PATH": "/custom/path/to/claude"})
 def test_config_claude_cli_path_override():
     """Test CLAUDE_CLI_PATH can be overridden"""
+    import src.agent_work_orders.config as config_module
+    importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig
 
     config = AgentWorkOrdersConfig()
@@ -84,6 +89,8 @@ def test_config_claude_cli_path_override():
 @patch.dict("os.environ", {"LOG_LEVEL": "DEBUG"})
 def test_config_log_level_override():
     """Test LOG_LEVEL can be overridden"""
+    import src.agent_work_orders.config as config_module
+    importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig
 
     config = AgentWorkOrdersConfig()
@@ -95,6 +102,8 @@ def test_config_log_level_override():
 @patch.dict("os.environ", {"CORS_ORIGINS": "http://example.com,http://test.com"})
 def test_config_cors_origins_override():
     """Test CORS_ORIGINS can be overridden"""
+    import src.agent_work_orders.config as config_module
+    importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig
 
     config = AgentWorkOrdersConfig()
@@ -105,13 +114,16 @@ def test_config_cors_origins_override():
 @pytest.mark.unit
 def test_config_ensure_temp_dir(tmp_path):
     """Test ensure_temp_dir creates directory"""
-    from src.agent_work_orders.config import AgentWorkOrdersConfig
     import os
+    import src.agent_work_orders.config as config_module
 
     # Use tmp_path for testing
     test_temp_dir = str(tmp_path / "test-agent-work-orders")
 
     with patch.dict("os.environ", {"AGENT_WORK_ORDER_TEMP_DIR": test_temp_dir}):
+        importlib.reload(config_module)
+        from src.agent_work_orders.config import AgentWorkOrdersConfig
+
         config = AgentWorkOrdersConfig()
         temp_dir = config.ensure_temp_dir()
 
@@ -130,6 +142,8 @@ def test_config_ensure_temp_dir(tmp_path):
 )
 def test_config_explicit_url_overrides_discovery_mode():
     """Test explicit URL takes precedence over service discovery mode"""
+    import src.agent_work_orders.config as config_module
+    importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig
 
     config = AgentWorkOrdersConfig()
@@ -154,6 +168,8 @@ def test_config_state_storage_type():
 @patch.dict("os.environ", {"FILE_STATE_DIRECTORY": "/custom/state/dir"})
 def test_config_file_state_directory():
     """Test FILE_STATE_DIRECTORY configuration"""
+    import src.agent_work_orders.config as config_module
+    importlib.reload(config_module)
     from src.agent_work_orders.config import AgentWorkOrdersConfig
 
     config = AgentWorkOrdersConfig()

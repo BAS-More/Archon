@@ -5,7 +5,7 @@ from datetime import datetime
 from fastapi.testclient import TestClient
 from unittest.mock import AsyncMock, MagicMock, patch
 
-from src.agent_work_orders.main import app
+from src.agent_work_orders.server import app
 from src.agent_work_orders.models import (
     AgentWorkOrderStatus,
     AgentWorkflowType,
@@ -38,7 +38,7 @@ def test_create_agent_work_order():
             "github_issue_number": "42",
         }
 
-        response = client.post("/agent-work-orders", json=request_data)
+        response = client.post("/api/agent-work-orders/", json=request_data)
 
         assert response.status_code == 201
         data = response.json()
@@ -59,7 +59,7 @@ def test_create_agent_work_order_without_issue():
             "user_request": "Fix the login bug where users can't sign in",
         }
 
-        response = client.post("/agent-work-orders", json=request_data)
+        response = client.post("/api/agent-work-orders/", json=request_data)
 
         assert response.status_code == 201
         data = response.json()
@@ -73,7 +73,7 @@ def test_create_agent_work_order_invalid_data():
         # Missing required fields
     }
 
-    response = client.post("/agent-work-orders", json=request_data)
+    response = client.post("/api/agent-work-orders/", json=request_data)
 
     assert response.status_code == 422  # Validation error
 
@@ -84,7 +84,7 @@ def test_list_agent_work_orders_empty():
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
         mock_repo.list = AsyncMock(return_value=[])
 
-        response = client.get("/agent-work-orders")
+        response = client.get("/api/agent-work-orders/")
 
         assert response.status_code == 200
         data = response.json()
@@ -117,7 +117,7 @@ def test_list_agent_work_orders_with_data():
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
         mock_repo.list = AsyncMock(return_value=[(state, metadata)])
 
-        response = client.get("/agent-work-orders")
+        response = client.get("/api/agent-work-orders/")
 
         assert response.status_code == 200
         data = response.json()
@@ -131,7 +131,7 @@ def test_list_agent_work_orders_with_status_filter():
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
         mock_repo.list = AsyncMock(return_value=[])
 
-        response = client.get("/agent-work-orders?status=running")
+        response = client.get("/api/agent-work-orders/?status=running")
 
         assert response.status_code == 200
         mock_repo.list.assert_called_once()
@@ -166,7 +166,7 @@ def test_get_agent_work_order():
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
         mock_repo.get = AsyncMock(return_value=(state, metadata))
 
-        response = client.get("/agent-work-orders/wo-test123")
+        response = client.get("/api/agent-work-orders/wo-test123")
 
         assert response.status_code == 200
         data = response.json()
@@ -181,7 +181,7 @@ def test_get_agent_work_order_not_found():
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
         mock_repo.get = AsyncMock(return_value=None)
 
-        response = client.get("/agent-work-orders/wo-nonexistent")
+        response = client.get("/api/agent-work-orders/wo-nonexistent")
 
         assert response.status_code == 404
 
@@ -212,7 +212,7 @@ def test_get_git_progress():
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
         mock_repo.get = AsyncMock(return_value=(state, metadata))
 
-        response = client.get("/agent-work-orders/wo-test123/git-progress")
+        response = client.get("/api/agent-work-orders/wo-test123/git-progress")
 
         assert response.status_code == 200
         data = response.json()
@@ -227,7 +227,7 @@ def test_get_git_progress_not_found():
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
         mock_repo.get = AsyncMock(return_value=None)
 
-        response = client.get("/agent-work-orders/wo-nonexistent/git-progress")
+        response = client.get("/api/agent-work-orders/wo-nonexistent/git-progress")
 
         assert response.status_code == 404
 
@@ -239,7 +239,7 @@ def test_send_prompt_to_agent():
         "prompt_text": "Continue with the next step",
     }
 
-    response = client.post("/agent-work-orders/wo-test123/prompt", json=request_data)
+    response = client.post("/api/agent-work-orders/wo-test123/prompt", json=request_data)
 
     # Currently returns success but doesn't actually send (Phase 2+)
     assert response.status_code == 200
@@ -249,7 +249,7 @@ def test_send_prompt_to_agent():
 
 def test_get_logs():
     """Test getting logs (placeholder)"""
-    response = client.get("/agent-work-orders/wo-test123/logs")
+    response = client.get("/api/agent-work-orders/wo-test123/logs")
 
     # Currently returns empty logs (Phase 2+)
     assert response.status_code == 200
@@ -275,7 +275,7 @@ def test_verify_repository_success():
 
         request_data = {"repository_url": "https://github.com/owner/repo"}
 
-        response = client.post("/github/verify-repository", json=request_data)
+        response = client.post("/api/agent-work-orders/github/verify-repository", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -292,7 +292,7 @@ def test_verify_repository_failure():
 
         request_data = {"repository_url": "https://github.com/owner/nonexistent"}
 
-        response = client.post("/github/verify-repository", json=request_data)
+        response = client.post("/api/agent-work-orders/github/verify-repository", json=request_data)
 
         assert response.status_code == 200
         data = response.json()
@@ -302,7 +302,7 @@ def test_verify_repository_failure():
 
 def test_get_agent_work_order_steps():
     """Test getting step history for a work order"""
-    from src.agent_work_orders.models import StepExecutionResult, StepHistory, WorkflowStep
+    from src.agent_work_orders.models import AgentWorkOrderState, StepExecutionResult, StepHistory, WorkflowStep
 
     # Create step history
     step_history = StepHistory(
@@ -325,10 +325,28 @@ def test_get_agent_work_order_steps():
         ],
     )
 
+    # Mock state for get() call
+    state = AgentWorkOrderState(
+        agent_work_order_id="wo-test123",
+        repository_url="https://github.com/owner/repo",
+        sandbox_identifier="sandbox-wo-test123",
+        git_branch_name="feat-wo-test123",
+        agent_session_id="session-123",
+    )
+    metadata = {
+        "sandbox_type": SandboxType.GIT_BRANCH,
+        "github_issue_number": None,
+        "status": AgentWorkOrderStatus.RUNNING,
+        "current_phase": None,
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+    }
+
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
+        mock_repo.get = AsyncMock(return_value=(state, metadata))
         mock_repo.get_step_history = AsyncMock(return_value=step_history)
 
-        response = client.get("/agent-work-orders/wo-test123/steps")
+        response = client.get("/api/agent-work-orders/wo-test123/steps")
 
         assert response.status_code == 200
         data = response.json()
@@ -344,9 +362,10 @@ def test_get_agent_work_order_steps():
 def test_get_agent_work_order_steps_not_found():
     """Test getting step history for non-existent work order"""
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
+        mock_repo.get = AsyncMock(return_value=None)
         mock_repo.get_step_history = AsyncMock(return_value=None)
 
-        response = client.get("/agent-work-orders/wo-nonexistent/steps")
+        response = client.get("/api/agent-work-orders/wo-nonexistent/steps")
 
         assert response.status_code == 404
         data = response.json()
@@ -355,14 +374,32 @@ def test_get_agent_work_order_steps_not_found():
 
 def test_get_agent_work_order_steps_empty():
     """Test getting empty step history"""
-    from src.agent_work_orders.models import StepHistory
+    from src.agent_work_orders.models import AgentWorkOrderState, StepHistory
 
     step_history = StepHistory(agent_work_order_id="wo-test123", steps=[])
 
+    # Mock state for get() call
+    state = AgentWorkOrderState(
+        agent_work_order_id="wo-test123",
+        repository_url="https://github.com/owner/repo",
+        sandbox_identifier="sandbox-wo-test123",
+        git_branch_name=None,
+        agent_session_id=None,
+    )
+    metadata = {
+        "sandbox_type": SandboxType.GIT_BRANCH,
+        "github_issue_number": None,
+        "status": AgentWorkOrderStatus.PENDING,
+        "current_phase": None,
+        "created_at": datetime.now(),
+        "updated_at": datetime.now(),
+    }
+
     with patch("src.agent_work_orders.api.routes.state_repository") as mock_repo:
+        mock_repo.get = AsyncMock(return_value=(state, metadata))
         mock_repo.get_step_history = AsyncMock(return_value=step_history)
 
-        response = client.get("/agent-work-orders/wo-test123/steps")
+        response = client.get("/api/agent-work-orders/wo-test123/steps")
 
         assert response.status_code == 200
         data = response.json()
