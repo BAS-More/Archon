@@ -32,6 +32,7 @@ class ServiceDiscovery:
         server_port = os.getenv("ARCHON_SERVER_PORT")
         mcp_port = os.getenv("ARCHON_MCP_PORT")
         agents_port = os.getenv("ARCHON_AGENTS_PORT")
+        agent_work_orders_port = os.getenv("AGENT_WORK_ORDERS_PORT")
 
         if not server_port:
             raise ValueError(
@@ -51,11 +52,18 @@ class ServiceDiscovery:
                 "Please set it in your .env file or environment. "
                 "Default value: 8052"
             )
+        if not agent_work_orders_port:
+            raise ValueError(
+                "AGENT_WORK_ORDERS_PORT environment variable is required. "
+                "Please set it in your .env file or environment. "
+                "Default value: 8053"
+            )
 
         self.DEFAULT_PORTS = {
             "api": int(server_port),
             "mcp": int(mcp_port),
             "agents": int(agents_port),
+            "agent_work_orders": int(agent_work_orders_port),
         }
 
         self.environment = self._detect_environment()
@@ -66,9 +74,11 @@ class ServiceDiscovery:
         "api": "archon-server",
         "mcp": "archon-mcp",
         "agents": "archon-agents",
+        "agent_work_orders": "archon-agent-work-orders",
         "archon-server": "archon-server",
         "archon-mcp": "archon-mcp",
         "archon-agents": "archon-agents",
+        "archon-agent-work-orders": "archon-agent-work-orders",
     }
 
     @staticmethod
@@ -225,6 +235,11 @@ def get_agents_url() -> str:
     return get_discovery().get_service_url("agents")
 
 
+def get_agent_work_orders_url() -> str:
+    """Get the Agent Work Orders service URL"""
+    return get_discovery().get_service_url("agent_work_orders")
+
+
 async def is_service_healthy(service: str) -> bool:
     """Check if a service is healthy"""
     return await get_discovery().health_check(service)
@@ -238,5 +253,6 @@ __all__ = [
     "get_api_url",
     "get_mcp_url",
     "get_agents_url",
+    "get_agent_work_orders_url",
     "is_service_healthy",
 ]

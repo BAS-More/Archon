@@ -8,6 +8,21 @@
 import { callAPIWithETag } from "@/features/shared/api/apiClient";
 import type { AgentWorkOrder, AgentWorkOrderStatus, CreateAgentWorkOrderRequest, StepHistory } from "../types";
 
+/**
+ * Get the base URL for agent work orders API
+ * Defaults to /api/agent-work-orders (proxy through main server)
+ * Can be overridden with VITE_AGENT_WORK_ORDERS_URL for direct connection
+ */
+const getBaseUrl = (): string => {
+  const directUrl = import.meta.env.VITE_AGENT_WORK_ORDERS_URL;
+  if (directUrl) {
+    // Direct URL should include the full path
+    return `${directUrl}/api/agent-work-orders`;
+  }
+  // Default: proxy through main server
+  return "/api/agent-work-orders";
+};
+
 export const agentWorkOrdersService = {
   /**
    * Create a new agent work order
@@ -17,7 +32,8 @@ export const agentWorkOrdersService = {
    * @throws Error if creation fails
    */
   async createWorkOrder(request: CreateAgentWorkOrderRequest): Promise<AgentWorkOrder> {
-    return await callAPIWithETag<AgentWorkOrder>("/api/agent-work-orders/", {
+    const baseUrl = getBaseUrl();
+    return await callAPIWithETag<AgentWorkOrder>(`${baseUrl}/`, {
       method: "POST",
       body: JSON.stringify(request),
     });
@@ -31,8 +47,9 @@ export const agentWorkOrdersService = {
    * @throws Error if request fails
    */
   async listWorkOrders(statusFilter?: AgentWorkOrderStatus): Promise<AgentWorkOrder[]> {
+    const baseUrl = getBaseUrl();
     const params = statusFilter ? `?status=${statusFilter}` : "";
-    return await callAPIWithETag<AgentWorkOrder[]>(`/api/agent-work-orders/${params}`);
+    return await callAPIWithETag<AgentWorkOrder[]>(`${baseUrl}/${params}`);
   },
 
   /**
@@ -43,7 +60,8 @@ export const agentWorkOrdersService = {
    * @throws Error if work order not found or request fails
    */
   async getWorkOrder(id: string): Promise<AgentWorkOrder> {
-    return await callAPIWithETag<AgentWorkOrder>(`/api/agent-work-orders/${id}`);
+    const baseUrl = getBaseUrl();
+    return await callAPIWithETag<AgentWorkOrder>(`${baseUrl}/${id}`);
   },
 
   /**
@@ -54,6 +72,7 @@ export const agentWorkOrdersService = {
    * @throws Error if work order not found or request fails
    */
   async getStepHistory(id: string): Promise<StepHistory> {
-    return await callAPIWithETag<StepHistory>(`/api/agent-work-orders/${id}/steps`);
+    const baseUrl = getBaseUrl();
+    return await callAPIWithETag<StepHistory>(`${baseUrl}/${id}/steps`);
   },
 };

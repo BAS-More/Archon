@@ -29,6 +29,12 @@ class AgentWorkOrdersConfig:
     LOG_LEVEL: str = os.getenv("LOG_LEVEL", "INFO")
     GH_CLI_PATH: str = os.getenv("GH_CLI_PATH", "gh")
 
+    # Service discovery configuration
+    SERVICE_DISCOVERY_MODE: str = os.getenv("SERVICE_DISCOVERY_MODE", "local")
+
+    # CORS configuration
+    CORS_ORIGINS: str = os.getenv("CORS_ORIGINS", "http://localhost:3737,http://host.docker.internal:3737,*")
+
     # Claude CLI flags configuration
     # --verbose: Required when using --print with --output-format=stream-json
     CLAUDE_CLI_VERBOSE: bool = os.getenv("CLAUDE_CLI_VERBOSE", "true").lower() == "true"
@@ -68,6 +74,32 @@ class AgentWorkOrdersConfig:
         temp_dir = Path(cls.TEMP_DIR_BASE)
         temp_dir.mkdir(parents=True, exist_ok=True)
         return temp_dir
+
+    @classmethod
+    def get_archon_server_url(cls) -> str:
+        """Get Archon server URL based on service discovery mode"""
+        # Allow explicit override
+        explicit_url = os.getenv("ARCHON_SERVER_URL")
+        if explicit_url:
+            return explicit_url
+
+        # Otherwise use service discovery mode
+        if cls.SERVICE_DISCOVERY_MODE == "docker_compose":
+            return "http://archon-server:8181"
+        return "http://localhost:8181"
+
+    @classmethod
+    def get_archon_mcp_url(cls) -> str:
+        """Get Archon MCP server URL based on service discovery mode"""
+        # Allow explicit override
+        explicit_url = os.getenv("ARCHON_MCP_URL")
+        if explicit_url:
+            return explicit_url
+
+        # Otherwise use service discovery mode
+        if cls.SERVICE_DISCOVERY_MODE == "docker_compose":
+            return "http://archon-mcp:8051"
+        return "http://localhost:8051"
 
 
 # Global config instance

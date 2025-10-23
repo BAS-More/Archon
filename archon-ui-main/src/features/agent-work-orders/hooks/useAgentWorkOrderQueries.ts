@@ -25,16 +25,29 @@ export const agentWorkOrderKeys = {
 };
 
 /**
- * Hook to fetch list of agent work orders, optionally filtered by status
+ * Hook to fetch list of agent work orders with smart polling
+ * Automatically polls when any work order is pending or running
  *
  * @param statusFilter - Optional status to filter work orders
  * @returns Query result with work orders array
  */
 export function useWorkOrders(statusFilter?: AgentWorkOrderStatus): UseQueryResult<AgentWorkOrder[], Error> {
+  const refetchInterval = useSmartPolling({
+    baseInterval: 3000,
+    enabled: true,
+  });
+
   return useQuery({
     queryKey: agentWorkOrderKeys.list(statusFilter),
     queryFn: () => agentWorkOrdersService.listWorkOrders(statusFilter),
-    staleTime: STALE_TIMES.frequent,
+    staleTime: STALE_TIMES.instant,
+    refetchInterval: (query) => {
+      const data = query.state.data as AgentWorkOrder[] | undefined;
+      const hasActiveWorkOrders = data?.some(
+        (wo) => wo.status === "running" || wo.status === "pending"
+      );
+      return hasActiveWorkOrders ? refetchInterval : false;
+    },
   });
 }
 

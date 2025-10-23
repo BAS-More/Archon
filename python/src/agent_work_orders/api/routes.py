@@ -317,16 +317,25 @@ async def get_agent_work_order_steps(agent_work_order_id: str) -> StepHistory:
 
     Returns detailed history of each step executed,
     including success/failure, duration, and errors.
+    Returns empty history if work order exists but has no steps yet.
     """
     logger.info("agent_step_history_get_started", agent_work_order_id=agent_work_order_id)
 
     try:
+        # First check if work order exists
+        result = await state_repository.get(agent_work_order_id)
+        if not result:
+            raise HTTPException(status_code=404, detail="Work order not found")
+
         step_history = await state_repository.get_step_history(agent_work_order_id)
 
         if not step_history:
-            raise HTTPException(
-                status_code=404, detail=f"Step history not found for work order {agent_work_order_id}"
+            # Work order exists but no steps yet - return empty history
+            logger.info(
+                "agent_step_history_empty",
+                agent_work_order_id=agent_work_order_id,
             )
+            return StepHistory(agent_work_order_id=agent_work_order_id, steps=[])
 
         logger.info(
             "agent_step_history_get_completed",

@@ -48,9 +48,12 @@ export function WorkOrderDetailView() {
     ? workOrder.repository_url.split("/").slice(-2).join("/")
     : "Unknown Repository";
 
-  const timeAgo = formatDistanceToNow(new Date(workOrder.created_at), {
-    addSuffix: true,
-  });
+  // Safely handle potentially invalid dates
+  const timeAgo = workOrder.created_at
+    ? formatDistanceToNow(new Date(workOrder.created_at), {
+        addSuffix: true,
+      })
+    : "Unknown";
 
   return (
     <div className="container mx-auto px-4 py-8">
