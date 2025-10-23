@@ -137,3 +137,56 @@ export interface StepHistory {
   /** Array of all executed steps in chronological order */
   steps: StepExecutionResult[];
 }
+
+/**
+ * Log entry from SSE stream
+ * Structured log event from work order execution
+ */
+export interface LogEntry {
+  /** Work order ID this log belongs to */
+  work_order_id: string;
+
+  /** Log level (info, warning, error, debug) */
+  level: "info" | "warning" | "error" | "debug";
+
+  /** Event name describing what happened */
+  event: string;
+
+  /** ISO timestamp when log was created */
+  timestamp: string;
+
+  /** Optional step name if log is associated with a step */
+  step?: WorkflowStep;
+
+  /** Optional step number (e.g., 2 for "2/5") */
+  step_number?: number;
+
+  /** Optional total steps (e.g., 5 for "2/5") */
+  total_steps?: number;
+
+  /** Optional progress string (e.g., "2/5") */
+  progress?: string;
+
+  /** Optional progress percentage (e.g., 40) */
+  progress_pct?: number;
+
+  /** Optional elapsed seconds */
+  elapsed_seconds?: number;
+
+  /** Optional error message */
+  error?: string;
+
+  /** Optional output/result */
+  output?: string;
+
+  /** Optional duration */
+  duration_seconds?: number;
+
+  /** Any additional structured fields from backend */
+  [key: string]: unknown;
+}
+
+/**
+ * Connection state for SSE stream
+ */
+export type SSEConnectionState = "connecting" | "connected" | "disconnected" | "error";

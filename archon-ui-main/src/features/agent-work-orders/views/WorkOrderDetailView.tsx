@@ -5,11 +5,13 @@
  * and full metadata.
  */
 
-import { formatDistanceToNow } from "date-fns";
+import { formatDistanceToNow, parseISO } from "date-fns";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button } from "@/features/ui/primitives/button";
 import { StepHistoryTimeline } from "../components/StepHistoryTimeline";
 import { WorkOrderProgressBar } from "../components/WorkOrderProgressBar";
+import { RealTimeStats } from "../components/RealTimeStats";
+import { WorkOrderLogsPanel } from "../components/WorkOrderLogsPanel";
 import { useStepHistory, useWorkOrder } from "../hooks/useAgentWorkOrderQueries";
 
 export function WorkOrderDetailView() {
@@ -49,8 +51,9 @@ export function WorkOrderDetailView() {
     : "Unknown Repository";
 
   // Safely handle potentially invalid dates
+  // Backend returns UTC timestamps without 'Z' suffix, so we add it to ensure correct parsing
   const timeAgo = workOrder.created_at
-    ? formatDistanceToNow(new Date(workOrder.created_at), {
+    ? formatDistanceToNow(parseISO(workOrder.created_at.endsWith('Z') ? workOrder.created_at : `${workOrder.created_at}Z`), {
         addSuffix: true,
       })
     : "Unknown";
@@ -67,6 +70,9 @@ export function WorkOrderDetailView() {
 
       <div className="grid gap-6 lg:grid-cols-3">
         <div className="lg:col-span-2 space-y-6">
+          {/* Real-Time Stats Panel */}
+          <RealTimeStats workOrderId={id} />
+
           <div className="bg-gray-800 bg-opacity-50 backdrop-blur-sm border border-gray-700 rounded-lg p-6">
             <h2 className="text-xl font-semibold text-white mb-4">Workflow Progress</h2>
             <WorkOrderProgressBar steps={stepHistory.steps} currentPhase={workOrder.current_phase} />
@@ -76,6 +82,9 @@ export function WorkOrderDetailView() {
             <h2 className="text-xl font-semibold text-white mb-4">Step History</h2>
             <StepHistoryTimeline steps={stepHistory.steps} currentPhase={workOrder.current_phase} />
           </div>
+
+          {/* Real-Time Logs Panel */}
+          <WorkOrderLogsPanel workOrderId={id} />
         </div>
 
         <div className="space-y-6">
