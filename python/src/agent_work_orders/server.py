@@ -16,6 +16,7 @@ from fastapi.middleware.cors import CORSMiddleware
 
 from .api.routes import log_buffer, router
 from .config import config
+from .database.client import check_database_health
 from .utils.structured_logger import (
     configure_structured_logging_with_buffer,
     get_logger,
@@ -195,6 +196,14 @@ async def health_check() -> dict[str, Any]:
                 "url": archon_server_url,
                 "error": str(e),
             }
+
+    # Check database health if using Supabase storage
+    if config.STATE_STORAGE_TYPE.lower() == "supabase":
+        db_health = await check_database_health()
+        health_status["storage_type"] = "supabase"
+        health_status["database"] = db_health
+    else:
+        health_status["storage_type"] = config.STATE_STORAGE_TYPE
 
     # Check MCP server connectivity (if configured)
     archon_mcp_url = os.getenv("ARCHON_MCP_URL")

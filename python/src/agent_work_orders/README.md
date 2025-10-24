@@ -97,8 +97,94 @@ docker compose up -d
 | `GH_CLI_PATH` | `gh` | Path to GitHub CLI executable |
 | `GH_TOKEN` | - | GitHub Personal Access Token for gh CLI authentication (required for PR creation) |
 | `LOG_LEVEL` | `INFO` | Logging level |
-| `STATE_STORAGE_TYPE` | `memory` | State storage (`memory` or `file`) - Use `file` for persistence |
+| `STATE_STORAGE_TYPE` | `memory` | State storage (`memory`, `file`, or `supabase`) - Use `supabase` for production |
 | `FILE_STATE_DIRECTORY` | `agent-work-orders-state` | Directory for file-based state (when `STATE_STORAGE_TYPE=file`) |
+| `SUPABASE_URL` | - | Supabase project URL (required when `STATE_STORAGE_TYPE=supabase`) |
+| `SUPABASE_SERVICE_KEY` | - | Supabase service key (required when `STATE_STORAGE_TYPE=supabase`) |
+
+### State Storage Options
+
+The service supports three state storage backends:
+
+**Memory Storage** (`STATE_STORAGE_TYPE=memory`):
+- **Default**: Easiest for development/testing
+- **Pros**: No setup required, fast
+- **Cons**: State lost on service restart, no persistence
+- **Use for**: Local development, unit tests
+
+**File Storage** (`STATE_STORAGE_TYPE=file`):
+- **Legacy**: File-based JSON persistence
+- **Pros**: Simple, no external dependencies
+- **Cons**: No ACID guarantees, race conditions possible, file corruption risk
+- **Use for**: Single-instance deployments, backward compatibility
+
+**Supabase Storage** (`STATE_STORAGE_TYPE=supabase`):
+- **Recommended for production**: PostgreSQL-backed persistence via Supabase
+- **Pros**: ACID guarantees, concurrent access support, foreign key constraints, indexes
+- **Cons**: Requires Supabase configuration and credentials
+- **Use for**: Production deployments, multi-instance setups
+
+### Supabase Configuration
+
+Agent Work Orders can use Supabase for production-ready persistent state management.
+
+#### Setup Steps
+
+1. **Reuse existing Archon Supabase credentials** - No new database or credentials needed. The agent work orders service shares the same Supabase project as the main Archon server.
+
+2. **Apply database migration**:
+   - Navigate to your Supabase project dashboard at https://app.supabase.com
+   - Open SQL Editor
+   - Copy and paste the migration from `migration/agent_work_orders_state.sql` (in the project root)
+   - Execute the migration
+   - See `migration/AGENT_WORK_ORDERS.md` for detailed instructions
+
+3. **Set environment variable**:
+   ```bash
+   export STATE_STORAGE_TYPE=supabase
+   ```
+
+4. **Verify configuration**:
+   ```bash
+   # Start the service
+   make agent-work-orders
+
+   # Check health endpoint
+   curl http://localhost:8053/health | jq
+   ```
+
+   Expected response:
+   ```json
+   {
+     "status": "healthy",
+     "storage_type": "supabase",
+     "database": {
+       "status": "healthy",
+       "tables_exist": true
+     }
+   }
+   ```
+
+#### Database Tables
+
+When using Supabase storage, two tables are created:
+
+- **`archon_agent_work_orders`**: Main work order state and metadata
+- **`archon_agent_work_order_steps`**: Step execution history with foreign key constraints
+
+#### Troubleshooting
+
+**Error: "tables_exist": false**
+- Migration not applied - see `database/migrations/README.md`
+- Check Supabase dashboard SQL Editor for error messages
+
+**Error: "SUPABASE_URL and SUPABASE_SERVICE_KEY must be set"**
+- Environment variables not configured
+- Ensure same credentials as main Archon server are set
+
+**Service starts but work orders not persisted**
+- Check `STATE_STORAGE_TYPE` is set to `supabase` (case-insensitive)
+- Verify health endpoint shows `"storage_type": "supabase"`
 
 ### Service Discovery Modes
 
