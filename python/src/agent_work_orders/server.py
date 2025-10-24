@@ -125,8 +125,15 @@ async def health_check() -> dict[str, Any]:
         "status": "healthy",
         "service": "agent-work-orders",
         "version": "0.1.0",
+        "enabled": config.ENABLED,
         "dependencies": {},
     }
+
+    # If feature is not enabled, return early with healthy status
+    # (disabled features are healthy - they're just not active)
+    if not config.ENABLED:
+        health_status["message"] = "Agent work orders feature is disabled. Set ENABLE_AGENT_WORK_ORDERS=true to enable."
+        return health_status
 
     # Check Claude CLI
     try:

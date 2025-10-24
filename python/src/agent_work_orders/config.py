@@ -17,6 +17,9 @@ def get_project_root() -> Path:
 class AgentWorkOrdersConfig:
     """Configuration for Agent Work Orders service"""
 
+    # Feature flag - allows disabling agent work orders entirely
+    ENABLED: bool = os.getenv("ENABLE_AGENT_WORK_ORDERS", "false").lower() == "true"
+
     CLAUDE_CLI_PATH: str = os.getenv("CLAUDE_CLI_PATH", "claude")
     EXECUTION_TIMEOUT: int = int(os.getenv("AGENT_WORK_ORDER_TIMEOUT", "3600"))
 

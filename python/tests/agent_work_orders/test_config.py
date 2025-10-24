@@ -154,14 +154,24 @@ def test_config_explicit_url_overrides_discovery_mode():
 
 
 @pytest.mark.unit
-@patch.dict("os.environ", {"STATE_STORAGE_TYPE": "file"})
 def test_config_state_storage_type():
     """Test STATE_STORAGE_TYPE configuration"""
-    from src.agent_work_orders.config import AgentWorkOrdersConfig
+    import os
 
-    config = AgentWorkOrdersConfig()
+    # Temporarily set the environment variable
+    old_value = os.environ.get("STATE_STORAGE_TYPE")
+    os.environ["STATE_STORAGE_TYPE"] = "file"
 
-    assert config.STATE_STORAGE_TYPE == "file"
+    try:
+        from src.agent_work_orders.config import AgentWorkOrdersConfig
+        config = AgentWorkOrdersConfig()
+        assert config.STATE_STORAGE_TYPE == "file"
+    finally:
+        # Restore old value
+        if old_value is None:
+            os.environ.pop("STATE_STORAGE_TYPE", None)
+        else:
+            os.environ["STATE_STORAGE_TYPE"] = old_value
 
 
 @pytest.mark.unit
