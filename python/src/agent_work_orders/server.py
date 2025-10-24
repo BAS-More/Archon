@@ -213,6 +213,27 @@ async def health_check() -> dict[str, Any]:
                 "error": str(e),
             }
 
+    # Check Supabase database connectivity (if configured)
+    supabase_url = os.getenv("SUPABASE_URL")
+    if supabase_url:
+        try:
+            from .state_manager.repository_config_repository import get_supabase_client
+
+            client = get_supabase_client()
+            # Check if archon_configured_repositories table exists
+            response = client.table("archon_configured_repositories").select("id").limit(1).execute()
+            health_status["dependencies"]["supabase"] = {
+                "available": True,
+                "table_exists": True,
+                "url": supabase_url.split("@")[-1] if "@" in supabase_url else supabase_url.split("//")[-1],
+            }
+        except Exception as e:
+            health_status["dependencies"]["supabase"] = {
+                "available": False,
+                "table_exists": False,
+                "error": str(e),
+            }
+
     # Determine overall status
     critical_deps_ok = (
         health_status["dependencies"].get("claude_cli", {}).get("available", False)

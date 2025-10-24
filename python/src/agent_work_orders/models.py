@@ -175,6 +175,71 @@ class GitHubRepository(BaseModel):
     url: str
 
 
+class ConfiguredRepository(BaseModel):
+    """Configured repository with metadata and preferences
+
+    Stores GitHub repository configuration for Agent Work Orders, including
+    verification status, metadata extracted from GitHub API, and per-repository
+    preferences for sandbox type and workflow commands.
+    """
+
+    id: str = Field(..., description="Unique UUID identifier for the configured repository")
+    repository_url: str = Field(..., description="GitHub repository URL (https://github.com/owner/repo format)")
+    display_name: str | None = Field(None, description="Human-readable repository name (e.g., 'owner/repo-name')")
+    owner: str | None = Field(None, description="Repository owner/organization name")
+    default_branch: str | None = Field(None, description="Default branch name (e.g., 'main' or 'master')")
+    is_verified: bool = Field(default=False, description="Boolean flag indicating if repository access has been verified")
+    last_verified_at: datetime | None = Field(None, description="Timestamp of last successful repository verification")
+    default_sandbox_type: SandboxType = Field(
+        default=SandboxType.GIT_WORKTREE,
+        description="Default sandbox type for work orders: git_worktree (default), full_clone, or tmp_dir"
+    )
+    default_commands: list[WorkflowStep] = Field(
+        default=[
+            WorkflowStep.CREATE_BRANCH,
+            WorkflowStep.PLANNING,
+            WorkflowStep.EXECUTE,
+            WorkflowStep.COMMIT,
+            WorkflowStep.CREATE_PR,
+        ],
+        description="Default workflow commands for work orders"
+    )
+    created_at: datetime = Field(..., description="Timestamp when repository configuration was created")
+    updated_at: datetime = Field(..., description="Timestamp when repository configuration was last updated")
+
+
+class CreateRepositoryRequest(BaseModel):
+    """Request to create a new configured repository
+
+    Creates a new repository configuration. If verify=True, the system will
+    call the GitHub API to validate repository access and extract metadata
+    (display_name, owner, default_branch) before storing.
+    """
+
+    repository_url: str = Field(..., description="GitHub repository URL to configure")
+    verify: bool = Field(
+        default=True,
+        description="Whether to verify repository access via GitHub API and extract metadata"
+    )
+
+
+class UpdateRepositoryRequest(BaseModel):
+    """Request to update an existing configured repository
+
+    All fields are optional for partial updates. Only provided fields will be
+    updated in the database.
+    """
+
+    default_sandbox_type: SandboxType | None = Field(
+        None,
+        description="Update the default sandbox type for this repository"
+    )
+    default_commands: list[WorkflowStep] | None = Field(
+        None,
+        description="Update the default workflow commands for this repository"
+    )
+
+
 class GitHubPullRequest(BaseModel):
     """GitHub pull request information"""
 

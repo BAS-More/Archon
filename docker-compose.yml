@@ -163,6 +163,7 @@ services:
     ports:
       - "${AGENT_WORK_ORDERS_PORT:-8053}:${AGENT_WORK_ORDERS_PORT:-8053}"
     environment:
+      - ENABLE_AGENT_WORK_ORDERS=true
       - SERVICE_DISCOVERY_MODE=docker_compose
       - ARCHON_SERVER_URL=http://archon-server:${ARCHON_SERVER_PORT:-8181}
       - ARCHON_MCP_URL=http://archon-mcp:${ARCHON_MCP_PORT:-8051}
