@@ -1,6 +1,7 @@
 import { Briefcase, Database, FileText, FolderKanban, Navigation, Settings } from "lucide-react";
 import { useState } from "react";
 import { AgentWorkOrderExample } from "../layouts/AgentWorkOrderExample";
+import { AgentWorkOrderLayoutExample } from "../layouts/AgentWorkOrderLayoutExample";
 import { DocumentBrowserExample } from "../layouts/DocumentBrowserExample";
 import { KnowledgeLayoutExample } from "../layouts/KnowledgeLayoutExample";
 import { NavigationExplanation } from "../layouts/NavigationExplanation";
@@ -75,9 +76,9 @@ export const LayoutsTab = () => {
           <div>
             <h2 className="text-2xl font-bold mb-4 text-gray-900 dark:text-white">Agent Work Orders Layout</h2>
             <p className="text-gray-600 dark:text-gray-400 mb-4">
-              Workflow progress visualization with step-by-step history and integrated document editing.
+              Repository-based work order management with table view, status tracking, and integrated detail view.
             </p>
-            <AgentWorkOrderExample />
+            <AgentWorkOrderLayoutExample />
           </div>
         );
       default:
