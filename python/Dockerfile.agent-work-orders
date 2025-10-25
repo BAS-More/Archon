@@ -59,6 +59,10 @@ RUN mkdir -p /repos /tmp/agent-work-orders && \
 USER agentuser
 RUN curl -fsSL https://claude.ai/install.sh | bash
 
+# Configure git to use gh CLI for GitHub authentication
+# This allows git clone to authenticate using GH_TOKEN environment variable
+RUN git config --global credential.helper '!gh auth git-credential'
+
 # Set environment variables
 ENV PYTHONPATH="/app:$PYTHONPATH"
 ENV PYTHONUNBUFFERED=1

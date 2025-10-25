@@ -1,6 +1,8 @@
 import {
   Activity,
   CheckCircle2,
+  ChevronDown,
+  ChevronUp,
   Clock,
   Copy,
   Eye,
@@ -10,6 +12,7 @@ import {
   Pin,
   Play,
   Plus,
+  Search,
   Trash2,
 } from "lucide-react";
 import { useState } from "react";
@@ -24,6 +27,7 @@ import { SelectableCard } from "@/features/ui/primitives/selectable-card";
 import { cn } from "@/features/ui/primitives/styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/features/ui/primitives/tooltip";
 import { AgentWorkOrderExample } from "./AgentWorkOrderExample";
+import { RealTimeStatsExample } from "./components/RealTimeStatsExample";
 
 const MOCK_REPOSITORIES = [
   {
@@ -69,7 +73,7 @@ interface WorkOrder {
 
 const MOCK_WORK_ORDERS: WorkOrder[] = [
   {
-    id: "wo-1",
+    id: "wo-1dc27d9e",
     repositoryId: "1",
     repositoryName: "archon-frontend",
     request: "Add dark mode toggle to settings page",
@@ -78,7 +82,7 @@ const MOCK_WORK_ORDERS: WorkOrder[] = [
     createdAt: "2024-01-15T10:30:00Z",
   },
   {
-    id: "wo-2",
+    id: "wo-2af8b3c1",
     repositoryId: "1",
     repositoryName: "archon-frontend",
     request: "Refactor navigation component to use new design system",
@@ -87,7 +91,7 @@ const MOCK_WORK_ORDERS: WorkOrder[] = [
     createdAt: "2024-01-15T09:15:00Z",
   },
   {
-    id: "wo-3",
+    id: "wo-4e372af3",
     repositoryId: "2",
     repositoryName: "archon-backend",
     request: "Implement caching layer for API responses",
@@ -96,7 +100,7 @@ const MOCK_WORK_ORDERS: WorkOrder[] = [
     createdAt: "2024-01-14T16:45:00Z",
   },
   {
-    id: "wo-4",
+    id: "wo-8b91f2d6",
     repositoryId: "2",
     repositoryName: "archon-backend",
     request: "Add rate limiting to authentication endpoints",
@@ -105,7 +109,7 @@ const MOCK_WORK_ORDERS: WorkOrder[] = [
     createdAt: "2024-01-14T14:20:00Z",
   },
   {
-    id: "wo-5",
+    id: "wo-5c7d4a89",
     repositoryId: "1",
     repositoryName: "archon-frontend",
     request: "Fix responsive layout issues on mobile devices",
@@ -114,7 +118,7 @@ const MOCK_WORK_ORDERS: WorkOrder[] = [
     createdAt: "2024-01-13T11:00:00Z",
   },
   {
-    id: "wo-6",
+    id: "wo-9f3e1b5a",
     repositoryId: "3",
     repositoryName: "archon-docs",
     request: "Update API documentation with new endpoints",
@@ -126,7 +130,7 @@ const MOCK_WORK_ORDERS: WorkOrder[] = [
 
 export const AgentWorkOrderLayoutExample = () => {
   const [selectedRepositoryId, setSelectedRepositoryId] = useState("1");
-  const [layoutMode, setLayoutMode] = useState<"horizontal" | "sidebar">("horizontal");
+  const [layoutMode, setLayoutMode] = useState<"horizontal" | "sidebar">("sidebar");
   const [sidebarExpanded, setSidebarExpanded] = useState(true);
   const [showAddRepoModal, setShowAddRepoModal] = useState(false);
   const [showNewWorkOrderModal, setShowNewWorkOrderModal] = useState(false);
@@ -134,6 +138,7 @@ export const AgentWorkOrderLayoutExample = () => {
   const [activeTab, setActiveTab] = useState<string>("all");
   const [showDetailView, setShowDetailView] = useState(false);
   const [selectedWorkOrderId, setSelectedWorkOrderId] = useState<string | null>(null);
+  const [searchQuery, setSearchQuery] = useState("");
 
   const selectedRepository = MOCK_REPOSITORIES.find((r) => r.id === selectedRepositoryId);
   const selectedWorkOrder = workOrders.find((wo) => wo.id === selectedWorkOrderId);
@@ -183,9 +188,42 @@ export const AgentWorkOrderLayoutExample = () => {
 
   return (
     <div className="space-y-6">
-      {/* Layout Mode Toggle */}
-      <div className="flex justify-end">
-        <div className="flex gap-1 p-1 bg-black/30 rounded-lg border border-white/10">
+      {/* Header Section */}
+      <div className="flex items-center justify-between gap-4">
+        {/* Title */}
+        <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Agent Work Orders</h1>
+
+        {/* Search Bar */}
+        <div className="relative flex-1 max-w-md">
+          <Search
+            className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500"
+            aria-hidden="true"
+          />
+          <Input
+            type="text"
+            placeholder="Search repositories..."
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            className="pl-10"
+            aria-label="Search repositories"
+          />
+        </div>
+
+        {/* View Toggle - Sidebar is default/primary */}
+        <div className="flex gap-1 p-1 bg-black/30 dark:bg-white/10 rounded-lg border border-white/10 dark:border-gray-700">
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={() => setLayoutMode("sidebar")}
+            className={cn(
+              "px-3",
+              layoutMode === "sidebar" && "bg-purple-500/20 dark:bg-purple-500/30 text-purple-400 dark:text-purple-300",
+            )}
+            aria-label="Switch to sidebar layout"
+            aria-pressed={layoutMode === "sidebar"}
+          >
+            <List className="w-4 h-4" aria-hidden="true" />
+          </Button>
           <Button
             variant="ghost"
             size="sm"
@@ -200,21 +238,17 @@ export const AgentWorkOrderLayoutExample = () => {
           >
             <LayoutGrid className="w-4 h-4" aria-hidden="true" />
           </Button>
-          <Button
-            variant="ghost"
-            size="sm"
-            onClick={() => setLayoutMode("sidebar")}
-            className={cn(
-              "px-3",
-              layoutMode === "sidebar" && "bg-purple-500/20 dark:bg-purple-500/30 text-purple-400 dark:text-purple-300",
-            )}
-            aria-label="Switch to sidebar layout"
-            aria-pressed={layoutMode === "sidebar"}
-          >
-            <List className="w-4 h-4" aria-hidden="true" />
-          </Button>
         </div>
+
+        {/* New Repo Button */}
+        <Button variant="cyan" onClick={() => setShowAddRepoModal(true)} aria-label="Add new repository">
+          <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
+          New Repo
+        </Button>
       </div>
+
+      {/* Add Repository Modal */}
+      <AddRepositoryModal open={showAddRepoModal} onOpenChange={setShowAddRepoModal} />
 
       {layoutMode === "horizontal" ? (
         <>
@@ -233,8 +267,6 @@ export const AgentWorkOrderLayoutExample = () => {
                     }}
                   />
                 ))}
-                {/* Add Repository Button */}
-                <AddRepositoryModal open={showAddRepoModal} onOpenChange={setShowAddRepoModal} />
               </div>
             </div>
           </div>
@@ -756,8 +788,9 @@ const WorkOrdersTableView = ({
           <thead>
             <tr className="bg-gradient-to-r from-gray-50 to-gray-100 dark:from-gray-900 dark:to-gray-800 border-b-2 border-gray-200 dark:border-gray-700">
               <th className="w-12" aria-label="Status indicator" />
-              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
-                Work Order ID
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">WO ID</th>
+              <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300 w-40">
+                Repository
               </th>
               <th className="px-4 py-3 text-left text-sm font-medium text-gray-700 dark:text-gray-300">
                 Request Summary
@@ -783,7 +816,7 @@ const WorkOrdersTableView = ({
   );
 };
 
-// Work Order Row with status-based styling
+// Work Order Row with status-based styling and expandable real-time stats
 const WorkOrderRow = ({
   workOrder,
   index,
@@ -795,103 +828,165 @@ const WorkOrderRow = ({
   onStart: () => void;
   onViewDetails: () => void;
 }) => {
+  const [isExpanded, setIsExpanded] = useState(false);
+
   // Status colors - STATIC lookup with all properties
   const statusColors: Record<
     WorkOrderStatus,
-    { color: "pink" | "cyan" | "blue" | "orange" | "purple" | "green"; edge: string; glow: string; label: string }
+    {
+      color: "pink" | "cyan" | "blue" | "orange" | "purple" | "green";
+      edge: string;
+      glow: string;
+      label: string;
+      stepNumber: number;
+    }
   > = {
     pending: {
       color: "pink",
       edge: "bg-pink-500",
       glow: "rgba(236,72,153,0.5)",
       label: "Pending",
+      stepNumber: 0,
     },
     create_branch: {
       color: "cyan",
       edge: "bg-cyan-500",
       glow: "rgba(34,211,238,0.5)",
       label: "+ Branch",
+      stepNumber: 1,
     },
     plan: {
       color: "blue",
       edge: "bg-blue-500",
       glow: "rgba(59,130,246,0.5)",
       label: "Planning",
+      stepNumber: 2,
     },
     execute: {
       color: "orange",
       edge: "bg-orange-500",
       glow: "rgba(249,115,22,0.5)",
       label: "Executing",
+      stepNumber: 3,
     },
     commit: {
       color: "purple",
       edge: "bg-purple-500",
       glow: "rgba(168,85,247,0.5)",
       label: "Commit",
+      stepNumber: 4,
     },
     create_pr: {
       color: "green",
       edge: "bg-green-500",
       glow: "rgba(34,197,94,0.5)",
       label: "Create PR",
+      stepNumber: 5,
     },
   };
 
   const colors = statusColors[workOrder.status];
+  const canExpand = workOrder.status !== "pending";
+
+  const handleStart = () => {
+    setIsExpanded(true); // Auto-expand when started
+    onStart();
+  };
 
   return (
-    <tr
-      className={cn(
-        "group transition-all duration-200",
-        index % 2 === 0 ? "bg-white/50 dark:bg-black/50" : "bg-gray-50/80 dark:bg-gray-900/30",
-        "hover:bg-gradient-to-r hover:from-cyan-50/70 hover:to-purple-50/70 dark:hover:from-cyan-900/20 dark:hover:to-purple-900/20",
-        "border-b border-gray-200 dark:border-gray-800",
-      )}
-    >
-      {/* Status indicator - glowing circle */}
-      <td className="px-3 py-2 w-12">
-        <div className="flex items-center justify-center">
-          <div className={cn("w-3 h-3 rounded-full", colors.edge)} style={{ boxShadow: `0 0 8px ${colors.glow}` }} />
-        </div>
-      </td>
-
-      {/* Work Order ID */}
-      <td className="px-4 py-2">
-        <span className="font-mono text-sm text-gray-700 dark:text-gray-300">{workOrder.id}</span>
-      </td>
-
-      {/* Request Summary */}
-      <td className="px-4 py-2">
-        <p className="text-sm text-gray-900 dark:text-white line-clamp-2">{workOrder.request}</p>
-      </td>
-
-      {/* Status Badge - using StatPill */}
-      <td className="px-4 py-2 w-32">
-        <StatPill color={colors.color} value={colors.label} size="sm" />
-      </td>
-
-      {/* Actions */}
-      <td className="px-4 py-2 w-32">
-        {workOrder.status === "pending" ? (
-          <Button onClick={onStart} size="xs" variant="green" className="w-full text-xs" aria-label="Start work order">
-            <Play className="w-3 h-3 mr-1" aria-hidden="true" />
-            Start
-          </Button>
-        ) : (
-          <Button
-            onClick={onViewDetails}
-            size="xs"
-            variant="blue"
-            className="w-full text-xs"
-            aria-label="Observe work order details"
-          >
-            <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
-            Observe
-          </Button>
+    <>
+      <tr
+        className={cn(
+          "group transition-all duration-200",
+          index % 2 === 0 ? "bg-white/50 dark:bg-black/50" : "bg-gray-50/80 dark:bg-gray-900/30",
+          "hover:bg-gradient-to-r hover:from-cyan-50/70 hover:to-purple-50/70 dark:hover:from-cyan-900/20 dark:hover:to-purple-900/20",
+          "border-b border-gray-200 dark:border-gray-800",
         )}
-      </td>
-    </tr>
+      >
+        {/* Status indicator - glowing circle with optional collapse button */}
+        <td className="px-3 py-2 w-12">
+          <div className="flex items-center justify-center gap-1">
+            {canExpand && (
+              <button
+                type="button"
+                onClick={() => setIsExpanded(!isExpanded)}
+                className="p-0.5 hover:bg-gray-200 dark:hover:bg-gray-700 rounded transition-colors"
+                aria-label={isExpanded ? "Collapse details" : "Expand details"}
+                aria-expanded={isExpanded}
+              >
+                {isExpanded ? (
+                  <ChevronUp className="w-3 h-3 text-gray-600 dark:text-gray-400" aria-hidden="true" />
+                ) : (
+                  <ChevronDown className="w-3 h-3 text-gray-600 dark:text-gray-400" aria-hidden="true" />
+                )}
+              </button>
+            )}
+            <div className={cn("w-3 h-3 rounded-full", colors.edge)} style={{ boxShadow: `0 0 8px ${colors.glow}` }} />
+          </div>
+        </td>
+
+        {/* Work Order ID */}
+        <td className="px-4 py-2">
+          <span className="font-mono text-sm text-gray-700 dark:text-gray-300">{workOrder.id}</span>
+        </td>
+
+        {/* Repository */}
+        <td className="px-4 py-2 w-40">
+          <span className="text-sm text-gray-900 dark:text-white">{workOrder.repositoryName}</span>
+        </td>
+
+        {/* Request Summary */}
+        <td className="px-4 py-2">
+          <p className="text-sm text-gray-900 dark:text-white line-clamp-2">{workOrder.request}</p>
+        </td>
+
+        {/* Status Badge - using StatPill */}
+        <td className="px-4 py-2 w-32">
+          <StatPill color={colors.color} value={colors.label} size="sm" />
+        </td>
+
+        {/* Actions */}
+        <td className="px-4 py-2 w-32">
+          {workOrder.status === "pending" ? (
+            <Button
+              onClick={handleStart}
+              size="xs"
+              variant="green"
+              className="w-full text-xs"
+              aria-label="Start work order"
+            >
+              <Play className="w-3 h-3 mr-1" aria-hidden="true" />
+              Start
+            </Button>
+          ) : (
+            <Button
+              onClick={onViewDetails}
+              size="xs"
+              variant="blue"
+              className="w-full text-xs"
+              aria-label="View work order details"
+            >
+              <Eye className="w-3 h-3 mr-1" aria-hidden="true" />
+              Details
+            </Button>
+          )}
+        </td>
+      </tr>
+
+      {/* Expanded row with real-time stats */}
+      {isExpanded && canExpand && (
+        <tr
+          className={cn(
+            index % 2 === 0 ? "bg-white/50 dark:bg-black/50" : "bg-gray-50/80 dark:bg-gray-900/30",
+            "border-b border-gray-200 dark:border-gray-800",
+          )}
+        >
+          <td colSpan={6} className="px-4 py-4">
+            <RealTimeStatsExample status={workOrder.status} stepNumber={colors.stepNumber} />
+          </td>
+        </tr>
+      )}
+    </>
   );
 };
 
@@ -926,23 +1021,6 @@ const AddRepositoryModal = ({ open, onOpenChange }: { open: boolean; onOpenChang
 
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
-      <DialogTrigger asChild>
-        <button
-          type="button"
-          className={cn(
-            "w-72 min-h-[180px] flex flex-col items-center justify-center shrink-0",
-            "rounded-lg border-2 border-dashed border-gray-300 dark:border-gray-700",
-            "hover:border-cyan-400 dark:hover:border-cyan-500",
-            "transition-colors duration-200",
-            "bg-white/30 dark:bg-black/20",
-            "backdrop-blur-sm",
-          )}
-          aria-label="Add repository"
-        >
-          <Plus className="w-8 h-8 text-gray-400 dark:text-gray-500 mb-2" aria-hidden="true" />
-          <span className="text-sm font-medium text-gray-600 dark:text-gray-400">Add Repository</span>
-        </button>
-      </DialogTrigger>
       <DialogContent>
         <DialogHeader>
           <DialogTitle>Add Repository</DialogTitle>

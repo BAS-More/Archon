@@ -1,6 +1,5 @@
 import { Briefcase, Database, FileText, FolderKanban, Navigation, Settings } from "lucide-react";
 import { useState } from "react";
-import { AgentWorkOrderExample } from "../layouts/AgentWorkOrderExample";
 import { AgentWorkOrderLayoutExample } from "../layouts/AgentWorkOrderLayoutExample";
 import { DocumentBrowserExample } from "../layouts/DocumentBrowserExample";
 import { KnowledgeLayoutExample } from "../layouts/KnowledgeLayoutExample";

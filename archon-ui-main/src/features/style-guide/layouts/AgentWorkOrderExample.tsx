@@ -5,6 +5,7 @@ import { Button } from "@/features/ui/primitives/button";
 import { Card } from "@/features/ui/primitives/card";
 import { cn } from "@/features/ui/primitives/styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/features/ui/primitives/tooltip";
+import { RealTimeStatsExample } from "./components/RealTimeStatsExample";
 import { StepHistoryCard } from "./components/StepHistoryCard";
 import { WorkflowStepButton } from "./components/WorkflowStepButton";
 
@@ -115,6 +116,9 @@ export const AgentWorkOrderExample = () => {
         <strong>Use this layout for:</strong> Agent work order workflows with step-by-step progress tracking,
         collapsible history, and integrated document editing for human-in-the-loop approval.
       </p>
+
+      {/* Real-Time Execution Stats */}
+      <RealTimeStatsExample status="plan" stepNumber={2} />
 
       {/* Workflow Progress Bar */}
       <Card blur="md" transparency="light" edgePosition="top" edgeColor="cyan" size="lg" className="overflow-visible">
