@@ -403,6 +403,7 @@ const RepositoryCard = ({
     repository.workOrderCounts.create_pr;
 
   const inProgressCount =
+    repository.workOrderCounts.pending +
     repository.workOrderCounts.create_branch +
     repository.workOrderCounts.plan +
     repository.workOrderCounts.execute +
@@ -671,6 +672,7 @@ const SidebarRepositoryCard = ({
     repository.workOrderCounts.create_pr;
 
   const inProgressCount =
+    repository.workOrderCounts.pending +
     repository.workOrderCounts.create_branch +
     repository.workOrderCounts.plan +
     repository.workOrderCounts.execute +
