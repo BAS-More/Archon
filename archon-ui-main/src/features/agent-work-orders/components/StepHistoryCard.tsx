@@ -61,7 +61,7 @@ export const StepHistoryCard = ({ step, isExpanded, onToggle, document }: StepHi
     >
       {/* Header */}
       <div className="flex items-center justify-between mb-3">
-        <div className="flex-1">
+        <div className="flex-1 min-w-0">
           <div className="flex items-center gap-2">
             <h4 className="font-semibold text-gray-900 dark:text-white">{step.stepName}</h4>
             {step.isHumanInLoop && (

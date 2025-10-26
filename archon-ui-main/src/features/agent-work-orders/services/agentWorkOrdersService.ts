@@ -6,7 +6,14 @@
  */
 
 import { callAPIWithETag } from "@/features/shared/api/apiClient";
-import type { AgentWorkOrder, AgentWorkOrderStatus, CreateAgentWorkOrderRequest, StepHistory } from "../types";
+import type {
+  AgentWorkOrder,
+  AgentWorkOrderStatus,
+  CreateAgentWorkOrderRequest,
+  StepHistory,
+  WorkflowStep,
+  WorkOrderLogsResponse,
+} from "../types";
 
 /**
  * Get the base URL for agent work orders API
@@ -91,5 +98,37 @@ export const agentWorkOrdersService = {
     return await callAPIWithETag<AgentWorkOrder>(`${baseUrl}/${id}/start`, {
       method: "POST",
     });
+  },
+
+  /**
+   * Get historical logs for a work order
+   * Fetches buffered logs from backend (not live streaming)
+   *
+   * @param id - The work order ID
+   * @param options - Optional filters (limit, offset, level, step)
+   * @returns Promise resolving to logs response
+   * @throws Error if work order not found or request fails
+   */
+  async getWorkOrderLogs(
+    id: string,
+    options?: {
+      limit?: number;
+      offset?: number;
+      level?: "info" | "warning" | "error" | "debug";
+      step?: WorkflowStep;
+    },
+  ): Promise<WorkOrderLogsResponse> {
+    const baseUrl = getBaseUrl();
+    const params = new URLSearchParams();
+
+    if (options?.limit) params.append("limit", options.limit.toString());
+    if (options?.offset) params.append("offset", options.offset.toString());
+    if (options?.level) params.append("level", options.level);
+    if (options?.step) params.append("step", options.step);
+
+    const queryString = params.toString();
+    const url = queryString ? `${baseUrl}/${id}/logs?${queryString}` : `${baseUrl}/${id}/logs`;
+
+    return await callAPIWithETag<WorkOrderLogsResponse>(url);
   },
 };

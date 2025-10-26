@@ -149,7 +149,7 @@ export function AgentWorkOrdersView() {
         <h1 className="text-2xl font-bold text-gray-900 dark:text-white">Agent Work Orders</h1>
 
         {/* Search Bar */}
-        <div className="relative flex-1 max-w-md">
+        <div className="relative flex-1 min-w-0 max-w-md">
           <Search
             className="absolute left-3 top-1/2 transform -translate-y-1/2 w-4 h-4 text-gray-400 dark:text-gray-500"
             aria-hidden="true"

@@ -1,5 +1,5 @@
 import { Trash2 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Button } from "@/features/ui/primitives/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/features/ui/primitives/select";
 import { cn } from "@/features/ui/primitives/styles";
@@ -7,8 +7,11 @@ import { Switch } from "@/features/ui/primitives/switch";
 import type { LogEntry } from "../types";
 
 interface ExecutionLogsProps {
-  /** Real logs from SSE stream */
+  /** Log entries to display (from SSE stream or historical data) */
   logs: LogEntry[];
+
+  /** Whether logs are from live SSE stream (shows "Live" indicator) */
+  isLive?: boolean;
 }
 
 /**
@@ -49,7 +52,7 @@ function LogEntryRow({ log }: { log: LogEntry }) {
         {log.level}
       </span>
       {log.step && <span className="text-cyan-600 dark:text-cyan-400 text-xs whitespace-nowrap">[{log.step}]</span>}
-      <span className="text-gray-900 dark:text-gray-300 flex-1">{log.event}</span>
+      <span className="text-gray-900 dark:text-gray-300 flex-1 min-w-0">{log.event}</span>
       {log.progress && (
         <span className="text-gray-500 dark:text-gray-400 text-xs whitespace-nowrap">{log.progress}</span>
       )}
@@ -57,12 +60,22 @@ function LogEntryRow({ log }: { log: LogEntry }) {
   );
 }
 
-export function ExecutionLogs({ logs }: ExecutionLogsProps) {
+export function ExecutionLogs({ logs, isLive = false }: ExecutionLogsProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [levelFilter, setLevelFilter] = useState<string>("all");
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
 
   // Filter logs by level
   const filteredLogs = levelFilter === "all" ? logs : logs.filter((log) => log.level === levelFilter);
+
+  /**
+   * Auto-scroll to bottom when new logs arrive (if enabled)
+   */
+  useEffect(() => {
+    if (autoScroll && scrollContainerRef.current) {
+      scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
+    }
+  }, [logs.length, autoScroll]); // Trigger on new logs, not filtered logs
 
   return (
     <div className="border border-white/10 dark:border-gray-700/30 rounded-lg overflow-hidden bg-black/20 dark:bg-white/5 backdrop-blur">
@@ -71,11 +84,18 @@ export function ExecutionLogs({ logs }: ExecutionLogsProps) {
         <div className="flex items-center gap-3">
           <span className="font-semibold text-gray-900 dark:text-gray-300">Execution Logs</span>
 
-          {/* Live indicator */}
-          <div className="flex items-center gap-1">
-            <div className="w-2 h-2 bg-green-500 rounded-full animate-pulse" />
-            <span className="text-xs text-green-600 dark:text-green-400">Live</span>
-          </div>
+          {/* Live/Historical indicator */}
+          {isLive ? (
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-green-500 dark:bg-green-400 rounded-full animate-pulse" />
+              <span className="text-xs text-green-600 dark:text-green-400">Live</span>
+            </div>
+          ) : (
+            <div className="flex items-center gap-1">
+              <div className="w-2 h-2 bg-gray-500 dark:bg-gray-400 rounded-full" />
+              <span className="text-xs text-gray-500 dark:text-gray-400">Historical</span>
+            </div>
+          )}
 
           <span className="text-xs text-gray-500 dark:text-gray-400">({filteredLogs.length} entries)</span>
         </div>
@@ -125,7 +145,7 @@ export function ExecutionLogs({ logs }: ExecutionLogsProps) {
       </div>
 
       {/* Log content - scrollable area */}
-      <div className="max-h-96 overflow-y-auto bg-black/40 dark:bg-black/20">
+      <div ref={scrollContainerRef} className="max-h-96 overflow-y-auto bg-black/40 dark:bg-black/20">
         {filteredLogs.length === 0 ? (
           <div className="flex flex-col items-center justify-center py-12 text-gray-500 dark:text-gray-400">
             <p>No logs match the current filter</p>

@@ -165,7 +165,7 @@ export function CreateWorkOrderModal({ open, onOpenChange }: CreateWorkOrderModa
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="pt-4">
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left Column (2/3 width) - Form Fields */}
             <div className="col-span-2 space-y-4">
               {/* Repository Selector */}

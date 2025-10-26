@@ -47,28 +47,28 @@ interface StatusConfig {
 const STATUS_COLORS: Record<string, StatusConfig> = {
   pending: {
     color: "pink",
-    edge: "bg-pink-500",
+    edge: "bg-pink-500 dark:bg-pink-400",
     glow: "rgba(236,72,153,0.5)",
     label: "Pending",
     stepNumber: 0,
   },
   running: {
     color: "cyan",
-    edge: "bg-cyan-500",
+    edge: "bg-cyan-500 dark:bg-cyan-400",
     glow: "rgba(34,211,238,0.5)",
     label: "Running",
     stepNumber: 1,
   },
   completed: {
     color: "green",
-    edge: "bg-green-500",
+    edge: "bg-green-500 dark:bg-green-400",
     glow: "rgba(34,197,94,0.5)",
     label: "Completed",
     stepNumber: 5,
   },
   failed: {
     color: "orange",
-    edge: "bg-orange-500",
+    edge: "bg-orange-500 dark:bg-orange-400",
     glow: "rgba(249,115,22,0.5)",
     label: "Failed",
     stepNumber: 0,
@@ -204,7 +204,7 @@ export function WorkOrderRow({
         </td>
       </tr>
 
-      {/* Expanded row with real-time stats */}
+      {/* Expanded row with real-time stats - shows live or historical data */}
       {isExpanded && canExpand && (
         <tr
           className={cn(

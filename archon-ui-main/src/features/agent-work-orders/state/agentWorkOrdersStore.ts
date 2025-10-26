@@ -55,17 +55,20 @@ export const useAgentWorkOrdersStore = create<AgentWorkOrdersStore>()(
         }),
         {
           name: "agent-work-orders-ui",
-          version: 1,
+          version: 2,
           partialize: (state) => ({
-            // Only persist UI preferences and search query
+            // Persist UI preferences and search query
             layoutMode: state.layoutMode,
             sidebarExpanded: state.sidebarExpanded,
             searchQuery: state.searchQuery,
+            // Persist SSE data to survive HMR
+            liveLogs: state.liveLogs,
+            liveProgress: state.liveProgress,
             // Do NOT persist:
             // - selectedRepositoryId (URL params are source of truth)
             // - Modal state (ephemeral)
-            // - SSE connections (must be re-established)
-            // - Live data (should be fresh on reload)
+            // - SSE connections (must be re-established, but data is preserved)
+            // - connectionStates (transient)
           }),
         },
       ),

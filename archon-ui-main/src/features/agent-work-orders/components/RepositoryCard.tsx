@@ -104,7 +104,7 @@ export function RepositoryCard({
       className={cn("w-72 min-h-[180px] flex flex-col shrink-0", backgroundClass)}
     >
       {/* Main content */}
-      <div className="flex-1 p-3 pb-2">
+      <div className="flex-1 min-w-0 p-3 pb-2">
         {/* Title */}
         <div className="flex flex-col items-center justify-center mb-4 min-h-[48px]">
           <h3
@@ -122,10 +122,10 @@ export function RepositoryCard({
         {/* Work order count pills - 3 custom pills with icons */}
         <div className="flex items-stretch gap-2 w-full">
           {/* Total pill */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <div
               className={cn(
-                "absolute inset-0 bg-pink-600 rounded-full blur-md",
+                "absolute inset-0 bg-pink-600 dark:bg-pink-400 rounded-full blur-md",
                 isSelected ? "opacity-30 dark:opacity-75" : "opacity-0",
               )}
             />
@@ -154,7 +154,7 @@ export function RepositoryCard({
                   Total
                 </span>
               </div>
-              <div className="flex-1 flex items-center justify-center border-l border-pink-300 dark:border-pink-500/30">
+              <div className="flex-1 min-w-0 flex items-center justify-center border-l border-pink-300 dark:border-pink-500/30">
                 <span
                   className={cn(
                     "text-lg font-bold",
@@ -168,10 +168,10 @@ export function RepositoryCard({
           </div>
 
           {/* In Progress pill */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <div
               className={cn(
-                "absolute inset-0 bg-blue-600 rounded-full blur-md",
+                "absolute inset-0 bg-blue-600 dark:bg-blue-400 rounded-full blur-md",
                 isSelected ? "opacity-30 dark:opacity-75" : "opacity-0",
               )}
             />
@@ -200,7 +200,7 @@ export function RepositoryCard({
                   Active
                 </span>
               </div>
-              <div className="flex-1 flex items-center justify-center border-l border-blue-300 dark:border-blue-500/30">
+              <div className="flex-1 min-w-0 flex items-center justify-center border-l border-blue-300 dark:border-blue-500/30">
                 <span
                   className={cn(
                     "text-lg font-bold",
@@ -214,10 +214,10 @@ export function RepositoryCard({
           </div>
 
           {/* Completed pill */}
-          <div className="relative flex-1">
+          <div className="relative flex-1 min-w-0">
             <div
               className={cn(
-                "absolute inset-0 bg-green-600 rounded-full blur-md",
+                "absolute inset-0 bg-green-600 dark:bg-green-400 rounded-full blur-md",
                 isSelected ? "opacity-30 dark:opacity-75" : "opacity-0",
               )}
             />
@@ -246,7 +246,7 @@ export function RepositoryCard({
                   Done
                 </span>
               </div>
-              <div className="flex-1 flex items-center justify-center border-l border-green-300 dark:border-green-500/30">
+              <div className="flex-1 min-w-0 flex items-center justify-center border-l border-green-300 dark:border-green-500/30">
                 <span
                   className={cn(
                     "text-lg font-bold",

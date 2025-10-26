@@ -122,7 +122,7 @@ export function AddRepositoryModal({ open, onOpenChange }: AddRepositoryModalPro
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="pt-4">
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left Column (2/3 width) - Form Fields */}
             <div className="col-span-2 space-y-4">
               {/* Repository URL */}
@@ -142,7 +142,7 @@ export function AddRepositoryModal({ open, onOpenChange }: AddRepositoryModalPro
               </div>
 
               {/* Info about auto-filled fields */}
-              <div className="p-3 bg-blue-500/10 border border-blue-500/20 rounded-lg">
+              <div className="p-3 bg-blue-500/10 dark:bg-blue-400/10 border border-blue-500/20 dark:border-blue-400/20 rounded-lg">
                 <p className="text-sm text-gray-700 dark:text-gray-300">
                   <strong>Auto-filled from GitHub:</strong>
                 </p>

@@ -117,11 +117,11 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
         </DialogHeader>
 
         <form onSubmit={handleSubmit} className="pt-4">
-          <div className="grid grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
             {/* Left Column (2/3 width) - Repository Info */}
             <div className="col-span-2 space-y-4">
               {/* Repository Info Card */}
-              <div className="p-4 bg-gray-500/10 border border-gray-500/20 rounded-lg space-y-3">
+              <div className="p-4 bg-gray-500/10 dark:bg-gray-400/10 border border-gray-500/20 dark:border-gray-400/20 rounded-lg space-y-3">
                 <h4 className="text-sm font-semibold text-gray-900 dark:text-white">Repository Information</h4>
 
                 <div className="space-y-2 text-sm">

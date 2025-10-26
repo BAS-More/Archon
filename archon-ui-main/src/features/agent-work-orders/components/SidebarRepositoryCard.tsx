@@ -142,7 +142,7 @@ export function SidebarRepositoryCard({
           </h4>
           {isPinned && (
             <div
-              className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-500 text-white text-[9px] font-bold rounded-full shrink-0"
+              className="flex items-center gap-1 px-1.5 py-0.5 bg-purple-500 dark:bg-purple-400 text-white text-[9px] font-bold rounded-full shrink-0"
               aria-label="Pinned repository"
             >
               <Pin className="w-2.5 h-2.5" fill="currentColor" aria-hidden="true" />

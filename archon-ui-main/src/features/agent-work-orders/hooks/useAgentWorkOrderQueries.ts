@@ -8,7 +8,13 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { DISABLED_QUERY_KEY, STALE_TIMES } from "@/features/shared/config/queryPatterns";
 import { agentWorkOrdersService } from "../services/agentWorkOrdersService";
-import type { AgentWorkOrder, AgentWorkOrderStatus, CreateAgentWorkOrderRequest, StepHistory } from "../types";
+import type {
+  AgentWorkOrder,
+  AgentWorkOrderStatus,
+  CreateAgentWorkOrderRequest,
+  StepHistory,
+  WorkOrderLogsResponse,
+} from "../types";
 
 /**
  * Query key factory for agent work orders
@@ -21,6 +27,7 @@ export const agentWorkOrderKeys = {
   details: () => [...agentWorkOrderKeys.all, "detail"] as const,
   detail: (id: string) => [...agentWorkOrderKeys.details(), id] as const,
   stepHistory: (id: string) => [...agentWorkOrderKeys.detail(id), "steps"] as const,
+  logs: (id: string) => [...agentWorkOrderKeys.detail(id), "logs"] as const,
 };
 
 /**
@@ -68,6 +75,34 @@ export function useStepHistory(workOrderId: string | undefined) {
       workOrderId ? agentWorkOrdersService.getStepHistory(workOrderId) : Promise.reject(new Error("No ID provided")),
     enabled: !!workOrderId,
     staleTime: STALE_TIMES.instant,
+  });
+}
+
+/**
+ * Hook to fetch historical logs for a work order
+ * Fetches buffered logs from backend (complementary to live SSE streaming)
+ *
+ * @param workOrderId - Work order ID (undefined disables query)
+ * @param options - Optional filters (limit, offset, level, step)
+ * @returns Query result with logs response
+ */
+export function useWorkOrderLogs(
+  workOrderId: string | undefined,
+  options?: {
+    limit?: number;
+    offset?: number;
+    level?: "info" | "warning" | "error" | "debug";
+    step?: string;
+  },
+) {
+  return useQuery<WorkOrderLogsResponse, Error>({
+    queryKey: workOrderId ? agentWorkOrderKeys.logs(workOrderId) : DISABLED_QUERY_KEY,
+    queryFn: () =>
+      workOrderId
+        ? agentWorkOrdersService.getWorkOrderLogs(workOrderId, options)
+        : Promise.reject(new Error("No ID provided")),
+    enabled: !!workOrderId,
+    staleTime: STALE_TIMES.normal, // 30 seconds cache for historical logs
   });
 }
 

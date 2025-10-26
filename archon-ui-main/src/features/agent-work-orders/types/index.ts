@@ -194,5 +194,26 @@ export interface LogEntry {
  */
 export type SSEConnectionState = "connecting" | "connected" | "disconnected" | "error";
 
+/**
+ * Response from GET /logs endpoint
+ * Contains historical log entries with pagination
+ */
+export interface WorkOrderLogsResponse {
+  /** Work order ID */
+  agent_work_order_id: string;
+
+  /** Array of log entries */
+  log_entries: LogEntry[];
+
+  /** Total number of logs available */
+  total: number;
+
+  /** Number of logs returned in this response */
+  limit: number;
+
+  /** Offset used for pagination */
+  offset: number;
+}
+
 // Export repository types
 export type { ConfiguredRepository, CreateRepositoryRequest, UpdateRepositoryRequest } from "./repository";
