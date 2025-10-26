@@ -9,6 +9,7 @@ import { Activity, CheckCircle2, Clock, Copy, Edit, Trash2 } from "lucide-react"
 import { SelectableCard } from "@/features/ui/primitives/selectable-card";
 import { cn } from "@/features/ui/primitives/styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/features/ui/primitives/tooltip";
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { ConfiguredRepository } from "../types/repository";
 
 export interface RepositoryCardProps {
@@ -23,9 +24,6 @@ export interface RepositoryCardProps {
 
   /** Callback when repository is selected */
   onSelect?: () => void;
-
-  /** Callback when edit button is clicked */
-  onEdit?: () => void;
 
   /** Callback when delete button is clicked */
   onDelete?: () => void;
@@ -66,10 +64,12 @@ export function RepositoryCard({
   isSelected = false,
   showAuroraGlow = false,
   onSelect,
-  onEdit,
   onDelete,
   stats = { total: 0, active: 0, done: 0 },
 }: RepositoryCardProps) {
+  // Get modal action from Zustand store (no prop drilling)
+  const openEditRepoModal = useAgentWorkOrdersStore((s) => s.openEditRepoModal);
+
   const backgroundClass = getBackgroundClass(isSelected);
 
   const handleCopyUrl = async (e: React.MouseEvent) => {
@@ -83,9 +83,7 @@ export function RepositoryCard({
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (onEdit) {
-      onEdit();
-    }
+    openEditRepoModal(repository);
   };
 
   const handleDelete = (e: React.MouseEvent) => {

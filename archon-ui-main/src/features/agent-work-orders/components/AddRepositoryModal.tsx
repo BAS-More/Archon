@@ -71,7 +71,7 @@ export function AddRepositoryModal({ open, onOpenChange }: AddRepositoryModalPro
   /**
    * Check if a step is disabled based on dependencies
    */
-  const isStepDisabled = (step: typeof WORKFLOW_STEPS[number]): boolean => {
+  const isStepDisabled = (step: (typeof WORKFLOW_STEPS)[number]): boolean => {
     if (!step.dependsOn) return false;
     return step.dependsOn.some((dep) => !selectedSteps.includes(dep));
   };

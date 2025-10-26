@@ -1,14 +1,19 @@
 import { Activity, ChevronDown, ChevronUp, Clock, TrendingUp } from "lucide-react";
 import { useEffect, useState } from "react";
 import { Button } from "@/features/ui/primitives/button";
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import { ExecutionLogs } from "./ExecutionLogs";
-import { useLogStats } from "../hooks/useLogStats";
-import { useWorkOrderLogs } from "../hooks/useWorkOrderLogs";
 
 interface RealTimeStatsProps {
   /** Work order ID to stream logs for */
   workOrderId: string | undefined;
 }
+
+/**
+ * Stable empty array reference to prevent infinite re-renders
+ * CRITICAL: Never use `|| []` in Zustand selectors - creates new reference each render
+ */
+const EMPTY_LOGS: never[] = [];
 
 /**
  * Format elapsed seconds to human-readable duration
@@ -30,25 +35,42 @@ function formatDuration(seconds: number): string {
 export function RealTimeStats({ workOrderId }: RealTimeStatsProps) {
   const [showLogs, setShowLogs] = useState(false);
 
-  // Real SSE data
-  const { logs } = useWorkOrderLogs({ workOrderId, autoReconnect: true });
-  const stats = useLogStats(logs);
+  // Zustand SSE slice - connection management
+  const connectToLogs = useAgentWorkOrdersStore((s) => s.connectToLogs);
+  const disconnectFromLogs = useAgentWorkOrdersStore((s) => s.disconnectFromLogs);
+
+  // Subscribe to live data - selector returns raw store value (stable reference)
+  const progress = useAgentWorkOrdersStore((s) => s.liveProgress[workOrderId ?? ""]);
+  const logs = useAgentWorkOrdersStore((s) => s.liveLogs[workOrderId ?? ""]) || EMPTY_LOGS;
 
   // Live elapsed time that updates every second
   const [currentElapsedSeconds, setCurrentElapsedSeconds] = useState<number | null>(null);
 
   /**
+   * Connect to SSE on mount, disconnect on unmount
+   * Note: connectToLogs and disconnectFromLogs are stable Zustand actions
+   */
+  useEffect(() => {
+    if (workOrderId) {
+      connectToLogs(workOrderId);
+      return () => disconnectFromLogs(workOrderId);
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [workOrderId]);
+
+  /**
    * Update elapsed time every second if work order is running
    */
   useEffect(() => {
-    if (!stats.hasStarted || stats.hasCompleted || stats.hasFailed) {
-      setCurrentElapsedSeconds(stats.elapsedSeconds);
+    const isRunning = progress?.status !== "completed" && progress?.status !== "failed";
+    if (!progress || !isRunning) {
+      setCurrentElapsedSeconds(progress?.elapsedSeconds ?? null);
       return;
     }
 
     // Start from last known elapsed time or 0
     const startTime = Date.now();
-    const initialElapsed = stats.elapsedSeconds || 0;
+    const initialElapsed = progress.elapsedSeconds || 0;
 
     const interval = setInterval(() => {
       const additionalSeconds = Math.floor((Date.now() - startTime) / 1000);
@@ -56,21 +78,22 @@ export function RealTimeStats({ workOrderId }: RealTimeStatsProps) {
     }, 1000);
 
     return () => clearInterval(interval);
-  }, [stats.hasStarted, stats.hasCompleted, stats.hasFailed, stats.elapsedSeconds]);
+  }, [progress?.status, progress?.elapsedSeconds, progress]);
 
-  // Don't render if no logs yet
-  if (logs.length === 0 || !stats.hasStarted) {
+  // Don't render if no progress data yet
+  if (!progress || logs.length === 0) {
     return null;
   }
 
-  const currentStep = stats.currentStep || "initializing";
+  const currentStep = progress.currentStep || "initializing";
   const stepDisplay =
-    stats.currentStepNumber !== null && stats.totalSteps !== null
-      ? `(${stats.currentStepNumber}/${stats.totalSteps})`
+    progress.stepNumber !== undefined && progress.totalSteps !== undefined
+      ? `(${progress.stepNumber}/${progress.totalSteps})`
       : "";
-  const progressPct = stats.progressPct || 0;
-  const elapsedSeconds = currentElapsedSeconds !== null ? currentElapsedSeconds : stats.elapsedSeconds || 0;
-  const currentActivity = stats.currentActivity || "Initializing workflow...";
+  const progressPct = progress.progressPct || 0;
+  const elapsedSeconds = currentElapsedSeconds !== null ? currentElapsedSeconds : progress.elapsedSeconds || 0;
+  const latestLog = logs[logs.length - 1];
+  const currentActivity = latestLog?.event || "Initializing workflow...";
 
   return (
     <div className="space-y-3">
@@ -115,9 +138,7 @@ export function RealTimeStats({ workOrderId }: RealTimeStatsProps) {
               <Clock className="w-3 h-3" aria-hidden="true" />
               Elapsed Time
             </div>
-            <div className="text-sm font-medium text-gray-900 dark:text-gray-200">
-              {formatDuration(elapsedSeconds)}
-            </div>
+            <div className="text-sm font-medium text-gray-900 dark:text-gray-200">{formatDuration(elapsedSeconds)}</div>
           </div>
         </div>
 

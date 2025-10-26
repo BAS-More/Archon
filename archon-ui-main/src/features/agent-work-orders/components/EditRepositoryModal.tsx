@@ -12,7 +12,7 @@ import { Checkbox } from "@/features/ui/primitives/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/features/ui/primitives/dialog";
 import { Label } from "@/features/ui/primitives/label";
 import { useUpdateRepository } from "../hooks/useRepositoryQueries";
-import type { ConfiguredRepository } from "../types/repository";
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { WorkflowStep } from "../types";
 
 export interface EditRepositoryModalProps {
@@ -21,9 +21,6 @@ export interface EditRepositoryModalProps {
 
   /** Callback to change open state */
   onOpenChange: (open: boolean) => void;
-
-  /** Repository to edit */
-  repository: ConfiguredRepository | null;
 }
 
 /**
@@ -38,7 +35,10 @@ const WORKFLOW_STEPS: { value: WorkflowStep; label: string; description: string;
   { value: "prp-review", label: "PRP Review", description: "Review against PRP document" },
 ];
 
-export function EditRepositoryModal({ open, onOpenChange, repository }: EditRepositoryModalProps) {
+export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalProps) {
+  // Read editing repository from Zustand store
+  const repository = useAgentWorkOrdersStore((s) => s.editingRepository);
+
   const [selectedSteps, setSelectedSteps] = useState<WorkflowStep[]>([]);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
@@ -68,7 +68,7 @@ export function EditRepositoryModal({ open, onOpenChange, repository }: EditRepo
   /**
    * Check if a step is disabled based on dependencies
    */
-  const isStepDisabled = (step: typeof WORKFLOW_STEPS[number]): boolean => {
+  const isStepDisabled = (step: (typeof WORKFLOW_STEPS)[number]): boolean => {
     if (!step.dependsOn) return false;
     return step.dependsOn.some((dep) => !selectedSteps.includes(dep));
   };
@@ -147,7 +147,9 @@ export function EditRepositoryModal({ open, onOpenChange, repository }: EditRepo
                   {repository.default_branch && (
                     <div>
                       <span className="text-gray-500 dark:text-gray-400">Branch: </span>
-                      <span className="text-gray-900 dark:text-white font-mono text-xs">{repository.default_branch}</span>
+                      <span className="text-gray-900 dark:text-white font-mono text-xs">
+                        {repository.default_branch}
+                      </span>
                     </div>
                   )}
                 </div>

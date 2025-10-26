@@ -15,6 +15,19 @@ import { RealTimeStats } from "../components/RealTimeStats";
 import { StepHistoryCard } from "../components/StepHistoryCard";
 import { WorkflowStepButton } from "../components/WorkflowStepButton";
 import { useStepHistory, useWorkOrder } from "../hooks/useAgentWorkOrderQueries";
+import type { WorkflowStep } from "../types";
+
+/**
+ * All available workflow steps in execution order
+ */
+const ALL_WORKFLOW_STEPS: WorkflowStep[] = [
+  "create-branch",
+  "planning",
+  "execute",
+  "commit",
+  "create-pr",
+  "prp-review",
+];
 
 export function AgentWorkOrderDetailView() {
   const { id } = useParams<{ id: string }>();
@@ -63,7 +76,8 @@ export function AgentWorkOrderDetailView() {
     );
   }
 
-  const repoName = workOrder.repository_url.split("/").slice(-2).join("/");
+  // Additional safety check for repository_url
+  const repoName = workOrder?.repository_url?.split("/").slice(-2).join("/") || "Unknown Repository";
 
   return (
     <div className="space-y-6">
@@ -77,7 +91,11 @@ export function AgentWorkOrderDetailView() {
           Work Orders
         </button>
         <span className="text-gray-400 dark:text-gray-600">/</span>
-        <button type="button" onClick={() => navigate("/agent-work-orders")} className="text-cyan-600 dark:text-cyan-400 hover:underline">
+        <button
+          type="button"
+          onClick={() => navigate("/agent-work-orders")}
+          className="text-cyan-600 dark:text-cyan-400 hover:underline"
+        >
           {repoName}
         </button>
         <span className="text-gray-400 dark:text-gray-600">/</span>
@@ -107,31 +125,42 @@ export function AgentWorkOrderDetailView() {
           </Button>
         </div>
 
-        {/* Workflow Steps */}
+        {/* Workflow Steps - Show all steps, highlight completed */}
         <div className="flex items-center justify-center gap-0">
-          {stepHistory.steps.map((step, index) => (
-            <div key={step.step} className="flex items-center">
-              <WorkflowStepButton
-                isCompleted={step.success}
-                isActive={index === stepHistory.steps.length - 1 && !step.success}
-                stepName={step.step}
-                color="cyan"
-                size={50}
-              />
-              {/* Connecting Line - only show between steps */}
-              {index < stepHistory.steps.length - 1 && (
-                <div className="relative flex-shrink-0" style={{ width: "80px", height: "50px" }}>
-                  <div
-                    className={
-                      step.success
-                        ? "absolute top-1/2 left-0 right-0 h-[2px] border-t-2 border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]"
-                        : "absolute top-1/2 left-0 right-0 h-[2px] border-t-2 border-gray-600 dark:border-gray-700"
-                    }
-                  />
-                </div>
-              )}
-            </div>
-          ))}
+          {ALL_WORKFLOW_STEPS.map((stepName, index) => {
+            // Find if this step has been executed
+            const executedStep = stepHistory.steps.find((s) => s.step === stepName);
+            const isCompleted = executedStep?.success || false;
+            // Mark as active if it's the last executed step and not successful (still running)
+            const isActive =
+              executedStep &&
+              stepHistory.steps[stepHistory.steps.length - 1]?.step === stepName &&
+              !executedStep.success;
+
+            return (
+              <div key={stepName} className="flex items-center">
+                <WorkflowStepButton
+                  isCompleted={isCompleted}
+                  isActive={isActive}
+                  stepName={stepName}
+                  color="cyan"
+                  size={50}
+                />
+                {/* Connecting Line - only show between steps */}
+                {index < ALL_WORKFLOW_STEPS.length - 1 && (
+                  <div className="relative flex-shrink-0" style={{ width: "80px", height: "50px" }}>
+                    <div
+                      className={
+                        isCompleted
+                          ? "absolute top-1/2 left-0 right-0 h-[2px] border-t-2 border-cyan-400 shadow-[0_0_8px_rgba(34,211,238,0.6)]"
+                          : "absolute top-1/2 left-0 right-0 h-[2px] border-t-2 border-gray-600 dark:border-gray-700"
+                      }
+                    />
+                  </div>
+                )}
+              </div>
+            );
+          })}
         </div>
 
         {/* Collapsible Details Section */}
@@ -179,7 +208,9 @@ export function AgentWorkOrderDetailView() {
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Sandbox Type</p>
-                        <p className="text-sm font-medium text-gray-900 dark:text-white mt-0.5">{workOrder.sandbox_type}</p>
+                        <p className="text-sm font-medium text-gray-900 dark:text-white mt-0.5">
+                          {workOrder.sandbox_type}
+                        </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Repository</p>
@@ -250,11 +281,15 @@ export function AgentWorkOrderDetailView() {
                     <div className="space-y-3">
                       <div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Commits</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{workOrder.git_commit_count}</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
+                          {workOrder.git_commit_count}
+                        </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Files Changed</p>
-                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">{workOrder.git_files_changed}</p>
+                        <p className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
+                          {workOrder.git_files_changed}
+                        </p>
                       </div>
                       <div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Steps Completed</p>

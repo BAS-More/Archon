@@ -46,9 +46,7 @@ export function WorkOrderTable({ workOrders, selectedRepositoryId, onStartWorkOr
   const filteredWorkOrders = selectedRepositoryId
     ? (() => {
         const selectedRepo = repositories.find((r) => r.id === selectedRepositoryId);
-        return selectedRepo
-          ? workOrders.filter((wo) => wo.repository_url === selectedRepo.repository_url)
-          : workOrders;
+        return selectedRepo ? workOrders.filter((wo) => wo.repository_url === selectedRepo.repository_url) : workOrders;
       })()
     : workOrders;
 

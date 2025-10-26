@@ -11,8 +11,9 @@ import { useNavigate } from "react-router-dom";
 import { Button } from "@/features/ui/primitives/button";
 import { type PillColor, StatPill } from "@/features/ui/primitives/pill";
 import { cn } from "@/features/ui/primitives/styles";
-import { RealTimeStats } from "./RealTimeStats";
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { AgentWorkOrder } from "../types";
+import { RealTimeStats } from "./RealTimeStats";
 
 export interface WorkOrderRowProps {
   /** Work order data */
@@ -82,7 +83,7 @@ function getStatusConfig(status: string): StatusConfig {
 }
 
 export function WorkOrderRow({
-  workOrder,
+  workOrder: cachedWorkOrder,
   repositoryDisplayName,
   index,
   onStart,
@@ -90,6 +91,16 @@ export function WorkOrderRow({
 }: WorkOrderRowProps) {
   const [isExpanded, setIsExpanded] = useState(wasJustStarted);
   const navigate = useNavigate();
+
+  // Subscribe to live progress from Zustand SSE slice
+  const liveProgress = useAgentWorkOrdersStore((s) => s.liveProgress[cachedWorkOrder.agent_work_order_id]);
+
+  // Merge: SSE data overrides cached data
+  const workOrder = {
+    ...cachedWorkOrder,
+    ...(liveProgress?.status && { status: liveProgress.status as AgentWorkOrder["status"] }),
+  };
+
   const statusConfig = getStatusConfig(workOrder.status);
 
   const handleStartClick = () => {
@@ -136,7 +147,10 @@ export function WorkOrderRow({
                 )}
               </button>
             )}
-            <div className={cn("w-3 h-3 rounded-full", statusConfig.edge)} style={{ boxShadow: `0 0 8px ${statusConfig.glow}` }} />
+            <div
+              className={cn("w-3 h-3 rounded-full", statusConfig.edge)}
+              style={{ boxShadow: `0 0 8px ${statusConfig.glow}` }}
+            />
           </div>
         </td>
 

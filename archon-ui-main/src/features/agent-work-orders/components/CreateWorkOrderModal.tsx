@@ -16,6 +16,7 @@ import { Label } from "@/features/ui/primitives/label";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/features/ui/primitives/select";
 import { useCreateWorkOrder } from "../hooks/useAgentWorkOrderQueries";
 import { useRepositories } from "../hooks/useRepositoryQueries";
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { SandboxType, WorkflowStep } from "../types";
 
 export interface CreateWorkOrderModalProps {
@@ -24,9 +25,6 @@ export interface CreateWorkOrderModalProps {
 
   /** Callback to change open state */
   onOpenChange: (open: boolean) => void;
-
-  /** Pre-selected repository ID */
-  selectedRepositoryId?: string;
 }
 
 /**
@@ -41,11 +39,14 @@ const WORKFLOW_STEPS: { value: WorkflowStep; label: string; dependsOn?: Workflow
   { value: "prp-review", label: "PRP Review" },
 ];
 
-export function CreateWorkOrderModal({ open, onOpenChange, selectedRepositoryId }: CreateWorkOrderModalProps) {
+export function CreateWorkOrderModal({ open, onOpenChange }: CreateWorkOrderModalProps) {
+  // Read preselected repository from Zustand store
+  const preselectedRepositoryId = useAgentWorkOrdersStore((s) => s.preselectedRepositoryId);
+
   const { data: repositories = [] } = useRepositories();
   const createWorkOrder = useCreateWorkOrder();
 
-  const [repositoryId, setRepositoryId] = useState(selectedRepositoryId || "");
+  const [repositoryId, setRepositoryId] = useState(preselectedRepositoryId || "");
   const [repositoryUrl, setRepositoryUrl] = useState("");
   const [sandboxType, setSandboxType] = useState<SandboxType>("git_worktree");
   const [userRequest, setUserRequest] = useState("");
@@ -58,16 +59,16 @@ export function CreateWorkOrderModal({ open, onOpenChange, selectedRepositoryId 
    * Pre-populate form when repository is selected
    */
   useEffect(() => {
-    if (selectedRepositoryId) {
-      setRepositoryId(selectedRepositoryId);
-      const repo = repositories.find((r) => r.id === selectedRepositoryId);
+    if (preselectedRepositoryId) {
+      setRepositoryId(preselectedRepositoryId);
+      const repo = repositories.find((r) => r.id === preselectedRepositoryId);
       if (repo) {
         setRepositoryUrl(repo.repository_url);
         setSandboxType(repo.default_sandbox_type);
         setSelectedCommands(repo.default_commands as WorkflowStep[]);
       }
     }
-  }, [selectedRepositoryId, repositories]);
+  }, [preselectedRepositoryId, repositories]);
 
   /**
    * Handle repository selection change
@@ -97,7 +98,7 @@ export function CreateWorkOrderModal({ open, onOpenChange, selectedRepositoryId 
   /**
    * Check if a step is disabled based on dependencies
    */
-  const isStepDisabled = (step: typeof WORKFLOW_STEPS[number]): boolean => {
+  const isStepDisabled = (step: (typeof WORKFLOW_STEPS)[number]): boolean => {
     if (!step.dependsOn) return false;
     return step.dependsOn.some((dep) => !selectedCommands.includes(dep));
   };
@@ -106,7 +107,7 @@ export function CreateWorkOrderModal({ open, onOpenChange, selectedRepositoryId 
    * Reset form state
    */
   const resetForm = () => {
-    setRepositoryId(selectedRepositoryId || "");
+    setRepositoryId(preselectedRepositoryId || "");
     setRepositoryUrl("");
     setSandboxType("git_worktree");
     setUserRequest("");

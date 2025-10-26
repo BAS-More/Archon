@@ -6,8 +6,9 @@
  */
 
 import { ChevronLeft, ChevronRight, GitBranch, LayoutGrid, List, Plus, Search } from "lucide-react";
-import { useState } from "react";
+import { useCallback, useEffect } from "react";
 import { useSearchParams } from "react-router-dom";
+import { useShallow } from "zustand/shallow";
 import { Button } from "@/features/ui/primitives/button";
 import { Input } from "@/features/ui/primitives/input";
 import { PillNavigation, type PillNavigationItem } from "@/features/ui/primitives/pill-navigation";
@@ -20,44 +21,46 @@ import { SidebarRepositoryCard } from "../components/SidebarRepositoryCard";
 import { WorkOrderTable } from "../components/WorkOrderTable";
 import { useStartWorkOrder, useWorkOrders } from "../hooks/useAgentWorkOrderQueries";
 import { useDeleteRepository, useRepositories } from "../hooks/useRepositoryQueries";
-import type { ConfiguredRepository } from "../types/repository";
-
-/**
- * Layout mode type
- */
-type LayoutMode = "horizontal" | "sidebar";
-
-/**
- * Local storage key for layout preference
- */
-const LAYOUT_MODE_KEY = "agent-work-orders-layout-mode";
-
-/**
- * Get initial layout mode from localStorage
- */
-function getInitialLayoutMode(): LayoutMode {
-  const stored = localStorage.getItem(LAYOUT_MODE_KEY);
-  return stored === "horizontal" || stored === "sidebar" ? stored : "sidebar";
-}
-
-/**
- * Save layout mode to localStorage
- */
-function saveLayoutMode(mode: LayoutMode): void {
-  localStorage.setItem(LAYOUT_MODE_KEY, mode);
-}
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 
 export function AgentWorkOrdersView() {
   const [searchParams, setSearchParams] = useSearchParams();
-  const [layoutMode, setLayoutMode] = useState<LayoutMode>(getInitialLayoutMode);
-  const [sidebarExpanded, setSidebarExpanded] = useState(true);
-  const [showAddRepoModal, setShowAddRepoModal] = useState(false);
-  const [showEditRepoModal, setShowEditRepoModal] = useState(false);
-  const [editingRepository, setEditingRepository] = useState<ConfiguredRepository | null>(null);
-  const [showNewWorkOrderModal, setShowNewWorkOrderModal] = useState(false);
-  const [searchQuery, setSearchQuery] = useState("");
 
-  // Get selected repository ID from URL query param
+  // Zustand UI Preferences - Group related state with useShallow
+  const { layoutMode, sidebarExpanded } = useAgentWorkOrdersStore(
+    useShallow((s) => ({
+      layoutMode: s.layoutMode,
+      sidebarExpanded: s.sidebarExpanded,
+    })),
+  );
+
+  // Zustand UI Preference Actions - Functions are stable, select individually
+  const setLayoutMode = useAgentWorkOrdersStore((s) => s.setLayoutMode);
+  const setSidebarExpanded = useAgentWorkOrdersStore((s) => s.setSidebarExpanded);
+
+  // Zustand Modals State - Group with useShallow
+  const { showAddRepoModal, showEditRepoModal, showCreateWorkOrderModal, editingRepository } = useAgentWorkOrdersStore(
+    useShallow((s) => ({
+      showAddRepoModal: s.showAddRepoModal,
+      showEditRepoModal: s.showEditRepoModal,
+      showCreateWorkOrderModal: s.showCreateWorkOrderModal,
+      editingRepository: s.editingRepository,
+    })),
+  );
+
+  // Zustand Modal Actions - Functions are stable, select individually
+  const openAddRepoModal = useAgentWorkOrdersStore((s) => s.openAddRepoModal);
+  const closeAddRepoModal = useAgentWorkOrdersStore((s) => s.closeAddRepoModal);
+  const openEditRepoModal = useAgentWorkOrdersStore((s) => s.openEditRepoModal);
+  const closeEditRepoModal = useAgentWorkOrdersStore((s) => s.closeEditRepoModal);
+  const openCreateWorkOrderModal = useAgentWorkOrdersStore((s) => s.openCreateWorkOrderModal);
+  const closeCreateWorkOrderModal = useAgentWorkOrdersStore((s) => s.closeCreateWorkOrderModal);
+
+  // Zustand Filters - Select individually
+  const searchQuery = useAgentWorkOrdersStore((s) => s.searchQuery);
+  const setSearchQuery = useAgentWorkOrdersStore((s) => s.setSearchQuery);
+
+  // Use URL params as source of truth for selected repository (no Zustand state needed)
   const selectedRepositoryId = searchParams.get("repo") || undefined;
 
   // Fetch data
@@ -66,45 +69,33 @@ export function AgentWorkOrdersView() {
   const startWorkOrder = useStartWorkOrder();
   const deleteRepository = useDeleteRepository();
 
-  /**
-   * Update layout mode and persist preference
-   */
-  const updateLayoutMode = (mode: LayoutMode) => {
-    setLayoutMode(mode);
-    saveLayoutMode(mode);
-  };
-
-  /**
-   * Update selected repository in URL
-   */
-  const selectRepository = (id: string | undefined) => {
-    if (id) {
-      setSearchParams({ repo: id });
-    } else {
-      setSearchParams({});
-    }
-  };
-
-  /**
-   * Handle opening edit modal for a repository
-   */
-  const handleEditRepository = (repository: ConfiguredRepository) => {
-    setEditingRepository(repository);
-    setShowEditRepoModal(true);
-  };
+  // Helper function to select repository (updates URL only)
+  const selectRepository = useCallback(
+    (id: string | undefined) => {
+      if (id) {
+        setSearchParams({ repo: id });
+      } else {
+        setSearchParams({});
+      }
+    },
+    [setSearchParams],
+  );
 
   /**
    * Handle repository deletion
    */
-  const handleDeleteRepository = async (id: string) => {
-    if (confirm("Are you sure you want to delete this repository configuration?")) {
-      await deleteRepository.mutateAsync(id);
-      // If this was the selected repository, clear selection
-      if (selectedRepositoryId === id) {
-        selectRepository(undefined);
+  const handleDeleteRepository = useCallback(
+    async (id: string) => {
+      if (confirm("Are you sure you want to delete this repository configuration?")) {
+        await deleteRepository.mutateAsync(id);
+        // If this was the selected repository, clear selection
+        if (selectedRepositoryId === id) {
+          selectRepository(undefined);
+        }
       }
-    }
-  };
+    },
+    [deleteRepository, selectedRepositoryId, selectRepository],
+  );
 
   /**
    * Calculate work order stats for a repository
@@ -178,7 +169,7 @@ export function AgentWorkOrdersView() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => updateLayoutMode("sidebar")}
+            onClick={() => setLayoutMode("sidebar")}
             className={cn(
               "px-3",
               layoutMode === "sidebar" && "bg-purple-500/20 dark:bg-purple-500/30 text-purple-400 dark:text-purple-300",
@@ -191,7 +182,7 @@ export function AgentWorkOrdersView() {
           <Button
             variant="ghost"
             size="sm"
-            onClick={() => updateLayoutMode("horizontal")}
+            onClick={() => setLayoutMode("horizontal")}
             className={cn(
               "px-3",
               layoutMode === "horizontal" &&
@@ -205,28 +196,16 @@ export function AgentWorkOrdersView() {
         </div>
 
         {/* New Repo Button */}
-        <Button
-          onClick={() => setShowAddRepoModal(true)}
-          variant="cyan"
-          aria-label="Add new repository"
-        >
+        <Button onClick={openAddRepoModal} variant="cyan" aria-label="Add new repository">
           <Plus className="w-4 h-4 mr-2" aria-hidden="true" />
           New Repo
         </Button>
       </div>
 
       {/* Modals */}
-      <AddRepositoryModal open={showAddRepoModal} onOpenChange={setShowAddRepoModal} />
-      <EditRepositoryModal
-        open={showEditRepoModal}
-        onOpenChange={setShowEditRepoModal}
-        repository={editingRepository}
-      />
-      <CreateWorkOrderModal
-        open={showNewWorkOrderModal}
-        onOpenChange={setShowNewWorkOrderModal}
-        selectedRepositoryId={selectedRepositoryId}
-      />
+      <AddRepositoryModal open={showAddRepoModal} onOpenChange={closeAddRepoModal} />
+      <EditRepositoryModal open={showEditRepoModal} onOpenChange={closeEditRepoModal} />
+      <CreateWorkOrderModal open={showCreateWorkOrderModal} onOpenChange={closeCreateWorkOrderModal} />
 
       {/* Horizontal Layout */}
       {layoutMode === "horizontal" && (
@@ -249,7 +228,6 @@ export function AgentWorkOrdersView() {
                       isSelected={selectedRepositoryId === repository.id}
                       showAuroraGlow={selectedRepositoryId === repository.id}
                       onSelect={() => selectRepository(repository.id)}
-                      onEdit={() => handleEditRepository(repository)}
                       onDelete={() => handleDeleteRepository(repository.id)}
                       stats={getRepositoryStats(repository.id)}
                     />
@@ -315,7 +293,6 @@ export function AgentWorkOrdersView() {
                       isPinned={false}
                       showAuroraGlow={selectedRepositoryId === repository.id}
                       onSelect={() => selectRepository(repository.id)}
-                      onEdit={() => handleEditRepository(repository)}
                       onDelete={() => handleDeleteRepository(repository.id)}
                       stats={getRepositoryStats(repository.id)}
                     />
@@ -347,7 +324,7 @@ export function AgentWorkOrdersView() {
               <div className="flex items-center justify-between mb-4">
                 <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Work Orders</h3>
                 <Button
-                  onClick={() => setShowNewWorkOrderModal(true)}
+                  onClick={() => openCreateWorkOrderModal(selectedRepositoryId)}
                   variant="cyan"
                   aria-label="Create new work order"
                 >
@@ -372,7 +349,7 @@ export function AgentWorkOrdersView() {
           <div className="flex items-center justify-between mb-4">
             <h3 className="text-lg font-semibold text-gray-900 dark:text-white">Work Orders</h3>
             <Button
-              onClick={() => setShowNewWorkOrderModal(true)}
+              onClick={() => openCreateWorkOrderModal(selectedRepositoryId)}
               variant="cyan"
               aria-label="Create new work order"
             >

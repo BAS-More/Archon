@@ -10,6 +10,7 @@ import { StatPill } from "@/features/ui/primitives/pill";
 import { SelectableCard } from "@/features/ui/primitives/selectable-card";
 import { cn } from "@/features/ui/primitives/styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/features/ui/primitives/tooltip";
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { ConfiguredRepository } from "../types/repository";
 
 export interface SidebarRepositoryCardProps {
@@ -27,9 +28,6 @@ export interface SidebarRepositoryCardProps {
 
   /** Callback when repository is selected */
   onSelect?: () => void;
-
-  /** Callback when edit button is clicked */
-  onEdit?: () => void;
 
   /** Callback when delete button is clicked */
   onDelete?: () => void;
@@ -96,10 +94,12 @@ export function SidebarRepositoryCard({
   isPinned = false,
   showAuroraGlow = false,
   onSelect,
-  onEdit,
   onDelete,
   stats = { total: 0, active: 0, done: 0 },
 }: SidebarRepositoryCardProps) {
+  // Get modal action from Zustand store (no prop drilling)
+  const openEditRepoModal = useAgentWorkOrdersStore((s) => s.openEditRepoModal);
+
   const backgroundClass = getBackgroundClass(isPinned, isSelected);
   const titleClass = getTitleClass(isSelected);
 
@@ -113,9 +113,7 @@ export function SidebarRepositoryCard({
 
   const handleEdit = (e: React.MouseEvent) => {
     e.stopPropagation();
-    if (onEdit) {
-      onEdit();
-    }
+    openEditRepoModal(repository);
   };
 
   const handleDelete = (e: React.MouseEvent) => {

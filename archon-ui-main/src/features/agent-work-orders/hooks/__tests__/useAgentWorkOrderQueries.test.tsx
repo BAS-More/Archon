@@ -29,10 +29,6 @@ vi.mock("@/features/shared/config/queryPatterns", () => ({
   },
 }));
 
-vi.mock("@/features/shared/hooks/useSmartPolling", () => ({
-  useSmartPolling: vi.fn(() => 3000),
-}));
-
 describe("agentWorkOrderKeys", () => {
   it("should generate correct query keys", () => {
     expect(agentWorkOrderKeys.all).toEqual(["agent-work-orders"]);
