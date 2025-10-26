@@ -96,6 +96,9 @@ export interface CreateAgentWorkOrderRequest {
 
   /** Optional GitHub issue number to associate with this work order */
   github_issue_number?: string | null;
+
+  /** Optional configured repository ID for linking work order to repository */
+  repository_id?: string;
 }
 
 /**
@@ -190,3 +193,6 @@ export interface LogEntry {
  * Connection state for SSE stream
  */
 export type SSEConnectionState = "connecting" | "connected" | "disconnected" | "error";
+
+// Export repository types
+export type { ConfiguredRepository, CreateRepositoryRequest, UpdateRepositoryRequest } from "./repository";

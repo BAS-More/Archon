@@ -24,7 +24,7 @@ import { useMigrationStatus } from './hooks/useMigrationStatus';
 
 
 const AppRoutes = () => {
-  const { projectsEnabled, styleGuideEnabled } = useSettings();
+  const { projectsEnabled, styleGuideEnabled, agentWorkOrdersEnabled } = useSettings();
 
   return (
     <Routes>
@@ -45,8 +45,14 @@ const AppRoutes = () => {
       ) : (
         <Route path="/projects" element={<Navigate to="/" replace />} />
       )}
-      <Route path="/agent-work-orders" element={<AgentWorkOrdersPage />} />
-      <Route path="/agent-work-orders/:id" element={<AgentWorkOrderDetailPage />} />
+      {agentWorkOrdersEnabled ? (
+        <>
+          <Route path="/agent-work-orders" element={<AgentWorkOrdersPage />} />
+          <Route path="/agent-work-orders/:id" element={<AgentWorkOrderDetailPage />} />
+        </>
+      ) : (
+        <Route path="/agent-work-orders" element={<Navigate to="/" replace />} />
+      )}
     </Routes>
   );
 };

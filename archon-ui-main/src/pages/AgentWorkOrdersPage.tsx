@@ -1,14 +1,12 @@
 /**
- * AgentWorkOrdersPage Component
+ * Agent Work Orders 2 Page
  *
- * Route wrapper for the agent work orders feature.
- * Delegates to AgentWorkOrdersView for actual implementation.
+ * Page wrapper for the redesigned agent work orders interface.
+ * Routes to this page from /agent-work-orders2
  */
 
-import { AgentWorkOrdersView } from "@/features/agent-work-orders/views/AgentWorkOrdersView";
+import { AgentWorkOrdersView } from "../features/agent-work-orders/views/AgentWorkOrdersView";
 
-function AgentWorkOrdersPage() {
+export function AgentWorkOrdersPage() {
 	return <AgentWorkOrdersView />;
 }
-
-export { AgentWorkOrdersPage };

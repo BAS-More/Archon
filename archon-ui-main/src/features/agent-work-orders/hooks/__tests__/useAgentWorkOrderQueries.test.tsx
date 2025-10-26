@@ -13,6 +13,7 @@ vi.mock("../../services/agentWorkOrdersService", () => ({
     getWorkOrder: vi.fn(),
     getStepHistory: vi.fn(),
     createWorkOrder: vi.fn(),
+    startWorkOrder: vi.fn(),
   },
 }));
 
@@ -260,5 +261,174 @@ describe("useCreateWorkOrder", () => {
 
     expect(agentWorkOrdersService.createWorkOrder).toHaveBeenCalledWith(mockRequest);
     expect(result.current.data).toEqual(mockCreated);
+  });
+});
+
+describe("useStartWorkOrder", () => {
+  let queryClient: QueryClient;
+
+  beforeEach(() => {
+    queryClient = new QueryClient({
+      defaultOptions: {
+        queries: { retry: false },
+        mutations: { retry: false },
+      },
+    });
+    vi.clearAllMocks();
+  });
+
+  it("should start a pending work order with optimistic update", async () => {
+    const { agentWorkOrdersService } = await import("../../services/agentWorkOrdersService");
+    const { useStartWorkOrder } = await import("../useAgentWorkOrderQueries");
+
+    const mockPendingWorkOrder = {
+      agent_work_order_id: "wo-123",
+      repository_url: "https://github.com/test/repo",
+      sandbox_identifier: "sandbox-123",
+      git_branch_name: null,
+      agent_session_id: null,
+      sandbox_type: "git_worktree" as const,
+      github_issue_number: null,
+      status: "pending" as const,
+      current_phase: null,
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+      github_pull_request_url: null,
+      git_commit_count: 0,
+      git_files_changed: 0,
+      error_message: null,
+    };
+
+    const mockRunningWorkOrder = {
+      ...mockPendingWorkOrder,
+      status: "running" as const,
+      updated_at: "2024-01-01T00:01:00Z",
+    };
+
+    // Set initial data in cache
+    queryClient.setQueryData(agentWorkOrderKeys.detail("wo-123"), mockPendingWorkOrder);
+    queryClient.setQueryData(agentWorkOrderKeys.lists(), [mockPendingWorkOrder]);
+
+    vi.mocked(agentWorkOrdersService.startWorkOrder).mockResolvedValue(mockRunningWorkOrder);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useStartWorkOrder(), { wrapper });
+
+    result.current.mutate("wo-123");
+
+    // Verify optimistic update happened immediately
+    await waitFor(() => {
+      const data = queryClient.getQueryData(agentWorkOrderKeys.detail("wo-123"));
+      expect((data as any)?.status).toBe("running");
+    });
+
+    // Wait for mutation to complete
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    expect(agentWorkOrdersService.startWorkOrder).toHaveBeenCalledWith("wo-123");
+    expect(result.current.data).toEqual(mockRunningWorkOrder);
+  });
+
+  it("should rollback on error", async () => {
+    const { agentWorkOrdersService } = await import("../../services/agentWorkOrdersService");
+    const { useStartWorkOrder } = await import("../useAgentWorkOrderQueries");
+
+    const mockPendingWorkOrder = {
+      agent_work_order_id: "wo-123",
+      repository_url: "https://github.com/test/repo",
+      sandbox_identifier: "sandbox-123",
+      git_branch_name: null,
+      agent_session_id: null,
+      sandbox_type: "git_worktree" as const,
+      github_issue_number: null,
+      status: "pending" as const,
+      current_phase: null,
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+      github_pull_request_url: null,
+      git_commit_count: 0,
+      git_files_changed: 0,
+      error_message: null,
+    };
+
+    // Set initial data in cache
+    queryClient.setQueryData(agentWorkOrderKeys.detail("wo-123"), mockPendingWorkOrder);
+    queryClient.setQueryData(agentWorkOrderKeys.lists(), [mockPendingWorkOrder]);
+
+    const error = new Error("Failed to start work order");
+    vi.mocked(agentWorkOrdersService.startWorkOrder).mockRejectedValue(error);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useStartWorkOrder(), { wrapper });
+
+    result.current.mutate("wo-123");
+
+    // Wait for mutation to fail
+    await waitFor(() => expect(result.current.isError).toBe(true));
+
+    // Verify data was rolled back to pending status
+    const data = queryClient.getQueryData(agentWorkOrderKeys.detail("wo-123"));
+    expect((data as any)?.status).toBe("pending");
+
+    const listData = queryClient.getQueryData(agentWorkOrderKeys.lists()) as any[];
+    expect(listData[0]?.status).toBe("pending");
+  });
+
+  it("should update both detail and list caches on success", async () => {
+    const { agentWorkOrdersService } = await import("../../services/agentWorkOrdersService");
+    const { useStartWorkOrder } = await import("../useAgentWorkOrderQueries");
+
+    const mockPendingWorkOrder = {
+      agent_work_order_id: "wo-123",
+      repository_url: "https://github.com/test/repo",
+      sandbox_identifier: "sandbox-123",
+      git_branch_name: null,
+      agent_session_id: null,
+      sandbox_type: "git_worktree" as const,
+      github_issue_number: null,
+      status: "pending" as const,
+      current_phase: null,
+      created_at: "2024-01-01T00:00:00Z",
+      updated_at: "2024-01-01T00:00:00Z",
+      github_pull_request_url: null,
+      git_commit_count: 0,
+      git_files_changed: 0,
+      error_message: null,
+    };
+
+    const mockRunningWorkOrder = {
+      ...mockPendingWorkOrder,
+      status: "running" as const,
+      updated_at: "2024-01-01T00:01:00Z",
+    };
+
+    // Set initial data in cache
+    queryClient.setQueryData(agentWorkOrderKeys.detail("wo-123"), mockPendingWorkOrder);
+    queryClient.setQueryData(agentWorkOrderKeys.lists(), [mockPendingWorkOrder]);
+
+    vi.mocked(agentWorkOrdersService.startWorkOrder).mockResolvedValue(mockRunningWorkOrder);
+
+    const wrapper = ({ children }: { children: React.ReactNode }) => (
+      <QueryClientProvider client={queryClient}>{children}</QueryClientProvider>
+    );
+
+    const { result } = renderHook(() => useStartWorkOrder(), { wrapper });
+
+    result.current.mutate("wo-123");
+
+    await waitFor(() => expect(result.current.isSuccess).toBe(true));
+
+    // Verify both detail and list caches updated
+    const detailData = queryClient.getQueryData(agentWorkOrderKeys.detail("wo-123"));
+    expect((detailData as any)?.status).toBe("running");
+
+    const listData = queryClient.getQueryData(agentWorkOrderKeys.lists()) as any[];
+    expect(listData[0]?.status).toBe("running");
   });
 });

@@ -103,7 +103,9 @@ export function useLogStats(logs: LogEntry[]): LogStats {
     // Check for workflow lifecycle events
     const hasStarted = logs.some((log) => log.event === "workflow_started" || log.event === "step_started");
 
-    const hasCompleted = logs.some((log) => log.event === "workflow_completed" || log.event === "agent_work_order_completed");
+    const hasCompleted = logs.some(
+      (log) => log.event === "workflow_completed" || log.event === "agent_work_order_completed",
+    );
 
     const hasFailed = logs.some(
       (log) => log.event === "workflow_failed" || log.event === "agent_work_order_failed" || log.level === "error",

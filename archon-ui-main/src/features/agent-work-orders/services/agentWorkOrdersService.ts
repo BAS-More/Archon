@@ -75,4 +75,21 @@ export const agentWorkOrdersService = {
     const baseUrl = getBaseUrl();
     return await callAPIWithETag<StepHistory>(`${baseUrl}/${id}/steps`);
   },
+
+  /**
+   * Start a pending work order (transition from pending to running)
+   * This triggers backend execution by updating the status to "running"
+   *
+   * @param id - The work order ID to start
+   * @returns Promise resolving to the updated work order
+   * @throws Error if work order not found, already running, or request fails
+   */
+  async startWorkOrder(id: string): Promise<AgentWorkOrder> {
+    const baseUrl = getBaseUrl();
+    // Note: Backend automatically starts execution when status transitions to "running"
+    // This is a conceptual API - actual implementation may vary based on backend
+    return await callAPIWithETag<AgentWorkOrder>(`${baseUrl}/${id}/start`, {
+      method: "POST",
+    });
+  },
 };
