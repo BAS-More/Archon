@@ -32,11 +32,12 @@ export const StepHistoryCard = ({ step, isExpanded, onToggle, document }: StepHi
   const [hasChanges, setHasChanges] = useState(false);
 
   const handleToggleEdit = () => {
-    if (!isEditingDocument && document) {
+    // Only initialize editedContent from document when entering edit mode and there's no existing draft
+    if (!isEditingDocument && document && !editedContent) {
       setEditedContent(document.content.markdown);
     }
     setIsEditingDocument(!isEditingDocument);
-    setHasChanges(false);
+    // Don't clear hasChanges when toggling - preserve unsaved drafts
   };
 
   const handleContentChange = (value: string) => {
@@ -224,7 +225,8 @@ export const StepHistoryCard = ({ step, isExpanded, onToggle, document }: StepHi
                             ),
                           }}
                         >
-                          {document.content.markdown}
+                          {/* Prefer displaying live draft (editedContent) when non-empty/hasChanges over original document content */}
+                          {editedContent && hasChanges ? editedContent : document.content.markdown}
                         </ReactMarkdown>
                       </div>
                     )}

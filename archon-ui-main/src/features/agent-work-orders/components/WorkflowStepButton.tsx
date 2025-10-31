@@ -61,7 +61,16 @@ export const WorkflowStepButton: React.FC<WorkflowStepButtonProps> = ({
     },
   };
 
-  const styles = colorMap[color];
+  // Label colors matching the color prop
+  const labelColorMap = {
+    purple: "text-purple-400 dark:text-purple-300",
+    green: "text-green-400 dark:text-green-300",
+    blue: "text-blue-400 dark:text-blue-300",
+    cyan: "text-cyan-400 dark:text-cyan-300",
+  };
+
+  const styles = colorMap[color] || colorMap.cyan;
+  const labelColor = labelColorMap[color] || labelColorMap.cyan;
 
   return (
     <div className="flex flex-col items-center gap-2">
@@ -153,9 +162,9 @@ export const WorkflowStepButton: React.FC<WorkflowStepButtonProps> = ({
         className={cn(
           "text-xs font-medium transition-colors",
           isCompleted
-            ? "text-cyan-400 dark:text-cyan-300"
+            ? labelColor
             : isActive
-              ? "text-blue-500 dark:text-blue-400"
+              ? labelColor
               : "text-gray-500 dark:text-gray-400",
         )}
       >

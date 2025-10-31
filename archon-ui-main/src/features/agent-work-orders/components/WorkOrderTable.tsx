@@ -5,7 +5,7 @@
  * and expandable real-time stats.
  */
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRepositories } from "../hooks/useRepositoryQueries";
 import type { AgentWorkOrder } from "../types";
 import { WorkOrderRow } from "./WorkOrderRow";
@@ -30,6 +30,7 @@ interface EnhancedWorkOrder extends AgentWorkOrder {
 
 export function WorkOrderTable({ workOrders, selectedRepositoryId, onStartWorkOrder }: WorkOrderTableProps) {
   const [justStartedId, setJustStartedId] = useState<string | null>(null);
+  const timeoutRef = useRef<NodeJS.Timeout | null>(null);
   const { data: repositories = [] } = useRepositories();
 
   // Create a map of repository URL to display name for quick lookup
@@ -63,9 +64,27 @@ export function WorkOrderTable({ workOrders, selectedRepositoryId, onStartWorkOr
     setJustStartedId(id);
     onStartWorkOrder(id);
 
+    // Clear any existing timeout before scheduling a new one
+    if (timeoutRef.current) {
+      clearTimeout(timeoutRef.current);
+    }
+
     // Clear the tracking after animation
-    setTimeout(() => setJustStartedId(null), 1000);
+    timeoutRef.current = setTimeout(() => {
+      setJustStartedId(null);
+      timeoutRef.current = null;
+    }, 1000);
   };
+
+  // Cleanup timeout on unmount to prevent setState after unmount
+  useEffect(() => {
+    return () => {
+      if (timeoutRef.current) {
+        clearTimeout(timeoutRef.current);
+        timeoutRef.current = null;
+      }
+    };
+  }, []);
 
   // Show empty state if no work orders
   if (filteredWorkOrders.length === 0) {

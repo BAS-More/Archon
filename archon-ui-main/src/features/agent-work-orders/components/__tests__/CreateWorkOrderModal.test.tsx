@@ -87,7 +87,7 @@ describe("CreateWorkOrderModal", () => {
     render(<CreateWorkOrderModal open={true} onOpenChange={vi.fn()} />, { wrapper });
 
     // Try to submit without filling required fields
-    const submitButton = screen.getByText("Create Work Order");
+    const submitButton = screen.getByRole("button", { name: "Create Work Order" });
     await user.click(submitButton);
 
     // Should show validation error

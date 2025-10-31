@@ -10,6 +10,7 @@ import { StatPill } from "@/features/ui/primitives/pill";
 import { SelectableCard } from "@/features/ui/primitives/selectable-card";
 import { cn } from "@/features/ui/primitives/styles";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/features/ui/primitives/tooltip";
+import { copyToClipboard } from "@/features/shared/utils/clipboard";
 import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { ConfiguredRepository } from "../types/repository";
 
@@ -38,19 +39,6 @@ export interface SidebarRepositoryCardProps {
     active: number;
     done: number;
   };
-}
-
-/**
- * Copy text to clipboard
- */
-async function copyToClipboard(text: string): Promise<boolean> {
-  try {
-    await navigator.clipboard.writeText(text);
-    return true;
-  } catch (err) {
-    console.error("Failed to copy:", err);
-    return false;
-  }
 }
 
 /**
@@ -105,9 +93,11 @@ export function SidebarRepositoryCard({
 
   const handleCopyUrl = async (e: React.MouseEvent) => {
     e.stopPropagation();
-    const success = await copyToClipboard(repository.repository_url);
-    if (success) {
+    const result = await copyToClipboard(repository.repository_url);
+    if (result.success) {
       console.log("Repository URL copied to clipboard");
+    } else {
+      console.error("Failed to copy repository URL:", result.error);
     }
   };
 

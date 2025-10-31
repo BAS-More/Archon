@@ -1,6 +1,4 @@
-import { Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
-import { Button } from "@/features/ui/primitives/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/features/ui/primitives/select";
 import { cn } from "@/features/ui/primitives/styles";
 import { Switch } from "@/features/ui/primitives/switch";
@@ -32,6 +30,7 @@ function formatRelativeTime(timestamp: string): string {
   const logTime = new Date(timestamp).getTime();
   const diffSeconds = Math.floor((now - logTime) / 1000);
 
+  if (diffSeconds < 0) return "just now";
   if (diffSeconds < 60) return `${diffSeconds}s ago`;
   if (diffSeconds < 3600) return `${Math.floor(diffSeconds / 60)}m ago`;
   return `${Math.floor(diffSeconds / 3600)}h ago`;
@@ -137,10 +136,6 @@ export function ExecutionLogs({ logs, isLive = false }: ExecutionLogsProps) {
             </span>
           </div>
 
-          {/* Clear logs button */}
-          <Button variant="ghost" size="xs" aria-label="Clear logs">
-            <Trash2 className="w-3 h-3" aria-hidden="true" />
-          </Button>
         </div>
       </div>
 

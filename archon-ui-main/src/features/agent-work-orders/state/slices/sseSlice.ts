@@ -108,8 +108,6 @@ export const createSSESlice: StateCreator<SSESlice, [], [], SSESlice> = (set, ge
     };
 
     eventSource.onerror = () => {
-      const currentState = get();
-
       set((state) => ({
         connectionStates: {
           ...state.connectionStates,
@@ -120,8 +118,13 @@ export const createSSESlice: StateCreator<SSESlice, [], [], SSESlice> = (set, ge
       // Auto-reconnect after 5 seconds
       setTimeout(() => {
         eventSource.close();
-        const connections = currentState.logConnections;
-        connections.delete(workOrderId);
+        // Use set() to properly update state instead of mutating stale reference
+        set((state) => {
+          const newConnections = new Map(state.logConnections);
+          newConnections.delete(workOrderId);
+          return { logConnections: newConnections };
+        });
+        // Use fresh get() to ensure we have the latest state before retry
         get().connectToLogs(workOrderId); // Retry
       }, 5000);
     };

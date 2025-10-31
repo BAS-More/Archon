@@ -96,7 +96,7 @@ export function useWorkOrderLogs(
   },
 ) {
   return useQuery<WorkOrderLogsResponse, Error>({
-    queryKey: workOrderId ? agentWorkOrderKeys.logs(workOrderId) : DISABLED_QUERY_KEY,
+    queryKey: workOrderId ? [...agentWorkOrderKeys.logs(workOrderId), options] : DISABLED_QUERY_KEY,
     queryFn: () =>
       workOrderId
         ? agentWorkOrdersService.getWorkOrderLogs(workOrderId, options)
@@ -150,11 +150,9 @@ export function useStartWorkOrder() {
     onMutate: async (id) => {
       // Cancel any outgoing refetches
       await queryClient.cancelQueries({ queryKey: agentWorkOrderKeys.detail(id) });
-      await queryClient.cancelQueries({ queryKey: agentWorkOrderKeys.lists() });
 
       // Snapshot the previous values
       const previousWorkOrder = queryClient.getQueryData<AgentWorkOrder>(agentWorkOrderKeys.detail(id));
-      const previousList = queryClient.getQueryData<AgentWorkOrder[]>(agentWorkOrderKeys.lists());
 
       // Optimistically update the work order status to "running"
       if (previousWorkOrder) {
@@ -165,15 +163,9 @@ export function useStartWorkOrder() {
         };
 
         queryClient.setQueryData(agentWorkOrderKeys.detail(id), optimisticWorkOrder);
-
-        // Update in list as well if present
-        queryClient.setQueryData<AgentWorkOrder[]>(agentWorkOrderKeys.lists(), (old) => {
-          if (!old) return old;
-          return old.map((wo) => (wo.agent_work_order_id === id ? optimisticWorkOrder : wo));
-        });
       }
 
-      return { previousWorkOrder, previousList };
+      return { previousWorkOrder };
     },
 
     onError: (error, id, context) => {
@@ -183,18 +175,13 @@ export function useStartWorkOrder() {
       if (context?.previousWorkOrder) {
         queryClient.setQueryData(agentWorkOrderKeys.detail(id), context.previousWorkOrder);
       }
-      if (context?.previousList) {
-        queryClient.setQueryData(agentWorkOrderKeys.lists(), context.previousList);
-      }
     },
 
     onSuccess: (data, id) => {
       // Replace optimistic update with server response
       queryClient.setQueryData(agentWorkOrderKeys.detail(id), data);
-      queryClient.setQueryData<AgentWorkOrder[]>(agentWorkOrderKeys.lists(), (old) => {
-        if (!old) return [data];
-        return old.map((wo) => (wo.agent_work_order_id === id ? data : wo));
-      });
+      // Invalidate all list queries to refetch with server data
+      queryClient.invalidateQueries({ queryKey: agentWorkOrderKeys.lists() });
     },
   });
 }

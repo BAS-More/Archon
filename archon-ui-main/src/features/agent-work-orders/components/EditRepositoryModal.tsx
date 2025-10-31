@@ -11,6 +11,7 @@ import { Button } from "@/features/ui/primitives/button";
 import { Checkbox } from "@/features/ui/primitives/checkbox";
 import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/features/ui/primitives/dialog";
 import { Label } from "@/features/ui/primitives/label";
+import { SimpleTooltip, TooltipProvider } from "@/features/ui/primitives/tooltip";
 import { useUpdateRepository } from "../hooks/useRepositoryQueries";
 import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { WorkflowStep } from "../types";
@@ -50,15 +51,32 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
   useEffect(() => {
     if (repository) {
       setSelectedSteps(repository.default_commands);
+      setError("");
     }
   }, [repository]);
 
   /**
+   * Check if any selected steps depend on the given step
+   */
+  const hasSelectedDependents = (step: WorkflowStep): boolean => {
+    return selectedSteps.some((selectedStep) => {
+      const stepDef = WORKFLOW_STEPS.find((s) => s.value === selectedStep);
+      return stepDef?.dependsOn?.includes(step) ?? false;
+    });
+  };
+
+  /**
    * Toggle workflow step selection
+   * Prevents unchecking a step if other selected steps depend on it
    */
   const toggleStep = (step: WorkflowStep) => {
     setSelectedSteps((prev) => {
       if (prev.includes(step)) {
+        // Attempting to uncheck - check if any selected steps depend on this one
+        if (hasSelectedDependents(step)) {
+          // Don't allow unchecking if dependents exist
+          return prev;
+        }
         return prev.filter((s) => s !== step);
       }
       return [...prev, step];
@@ -163,27 +181,78 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
             {/* Right Column (1/3 width) - Workflow Steps */}
             <div className="space-y-4">
               <Label>Default Workflow Steps</Label>
+              <TooltipProvider>
               <div className="space-y-2">
                 {WORKFLOW_STEPS.map((step) => {
                   const isSelected = selectedSteps.includes(step.value);
-                  const isDisabled = isStepDisabled(step);
+                    const isDisabledForEnable = isStepDisabled(step);
+                    const hasDependents = isSelected && hasSelectedDependents(step.value);
+                    const cannotUncheck = hasDependents;
+                    const isCheckboxDisabled = isDisabledForEnable || cannotUncheck;
 
-                  return (
-                    <div key={step.value} className="flex items-center gap-2">
+                    // Get dependent step names for tooltip message
+                    const dependentSteps = isSelected
+                      ? selectedSteps
+                          .filter((selectedStep) => {
+                            const stepDef = WORKFLOW_STEPS.find((s) => s.value === selectedStep);
+                            return stepDef?.dependsOn?.includes(step.value) ?? false;
+                          })
+                          .map((depStep) => {
+                            const stepDef = WORKFLOW_STEPS.find((s) => s.value === depStep);
+                            return stepDef?.label ?? depStep;
+                          })
+                      : [];
+
+                    const tooltipMessage = cannotUncheck
+                      ? `Cannot uncheck: ${dependentSteps.join(", ")} ${dependentSteps.length === 1 ? "depends" : "depend"} on this step`
+                      : isDisabledForEnable && step.dependsOn
+                        ? `Requires: ${step.dependsOn.map((dep) => WORKFLOW_STEPS.find((s) => s.value === dep)?.label ?? dep).join(", ")}`
+                        : undefined;
+
+                    const checkbox = (
                       <Checkbox
                         id={`edit-step-${step.value}`}
                         checked={isSelected}
-                        onCheckedChange={() => !isDisabled && toggleStep(step.value)}
-                        disabled={isDisabled}
+                        onCheckedChange={() => {
+                          if (!isCheckboxDisabled) {
+                            toggleStep(step.value);
+                          }
+                        }}
+                        disabled={isCheckboxDisabled}
                         aria-label={step.label}
+                        className={cannotUncheck ? "cursor-not-allowed opacity-75" : ""}
                       />
-                      <Label htmlFor={`edit-step-${step.value}`} className={isDisabled ? "text-gray-400" : ""}>
+                    );
+
+                    return (
+                      <div key={step.value} className="flex items-center gap-2">
+                        {tooltipMessage ? (
+                          <SimpleTooltip content={tooltipMessage} side="right">
+                            {checkbox}
+                          </SimpleTooltip>
+                        ) : (
+                          checkbox
+                        )}
+                        <Label
+                          htmlFor={`edit-step-${step.value}`}
+                          className={
+                            isCheckboxDisabled
+                              ? "text-gray-400 dark:text-gray-500 cursor-not-allowed"
+                              : "cursor-pointer"
+                          }
+                        >
                         {step.label}
+                          {cannotUncheck && (
+                            <span className="ml-1 text-xs text-cyan-500 dark:text-cyan-400" aria-hidden="true">
+                              (locked)
+                            </span>
+                          )}
                       </Label>
                     </div>
                   );
                 })}
               </div>
+              </TooltipProvider>
               <p className="text-xs text-gray-500 dark:text-gray-400">Commit and PR require Execute</p>
             </div>
           </div>
