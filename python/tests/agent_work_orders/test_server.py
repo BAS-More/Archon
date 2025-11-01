@@ -46,6 +46,7 @@ def test_server_root_endpoint():
 
 @pytest.mark.unit
 @patch("src.agent_work_orders.server.subprocess.run")
+@patch.dict("os.environ", {"ENABLE_AGENT_WORK_ORDERS": "true"})
 def test_health_check_claude_cli_available(mock_run):
     """Test health check detects Claude CLI availability"""
     from src.agent_work_orders.server import app
@@ -65,6 +66,7 @@ def test_health_check_claude_cli_available(mock_run):
 
 @pytest.mark.unit
 @patch("src.agent_work_orders.server.subprocess.run")
+@patch.dict("os.environ", {"ENABLE_AGENT_WORK_ORDERS": "true"})
 def test_health_check_claude_cli_unavailable(mock_run):
     """Test health check handles missing Claude CLI"""
     from src.agent_work_orders.server import app
@@ -84,6 +86,7 @@ def test_health_check_claude_cli_unavailable(mock_run):
 
 @pytest.mark.unit
 @patch("src.agent_work_orders.server.shutil.which")
+@patch.dict("os.environ", {"ENABLE_AGENT_WORK_ORDERS": "true"})
 def test_health_check_git_availability(mock_which):
     """Test health check detects git availability"""
     from src.agent_work_orders.server import app
@@ -102,7 +105,7 @@ def test_health_check_git_availability(mock_which):
 
 @pytest.mark.unit
 @patch("src.agent_work_orders.server.httpx.AsyncClient")
-@patch.dict("os.environ", {"ARCHON_SERVER_URL": "http://localhost:8181"})
+@patch.dict("os.environ", {"ARCHON_SERVER_URL": "http://localhost:8181", "ENABLE_AGENT_WORK_ORDERS": "true"})
 async def test_health_check_server_connectivity(mock_client_class):
     """Test health check validates server connectivity"""
     from src.agent_work_orders.server import health_check
@@ -121,7 +124,7 @@ async def test_health_check_server_connectivity(mock_client_class):
 
 @pytest.mark.unit
 @patch("src.agent_work_orders.server.httpx.AsyncClient")
-@patch.dict("os.environ", {"ARCHON_MCP_URL": "http://localhost:8051"})
+@patch.dict("os.environ", {"ARCHON_MCP_URL": "http://localhost:8051", "ENABLE_AGENT_WORK_ORDERS": "true"})
 async def test_health_check_mcp_connectivity(mock_client_class):
     """Test health check validates MCP connectivity"""
     from src.agent_work_orders.server import health_check
@@ -140,7 +143,7 @@ async def test_health_check_mcp_connectivity(mock_client_class):
 
 @pytest.mark.unit
 @patch("src.agent_work_orders.server.httpx.AsyncClient")
-@patch.dict("os.environ", {"ARCHON_SERVER_URL": "http://localhost:8181"})
+@patch.dict("os.environ", {"ARCHON_SERVER_URL": "http://localhost:8181", "ENABLE_AGENT_WORK_ORDERS": "true"})
 async def test_health_check_server_unavailable(mock_client_class):
     """Test health check handles unavailable server"""
     from src.agent_work_orders.server import health_check

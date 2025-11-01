@@ -63,20 +63,17 @@ class RepositoryConfigRepository:
         self._logger = logger.bind(table=self.table_name)
         self._logger.info("repository_config_repository_initialized")
 
-    def _row_to_model(self, row: dict[str, Any]) -> ConfiguredRepository | None:
+    def _row_to_model(self, row: dict[str, Any]) -> ConfiguredRepository:
         """Convert database row to ConfiguredRepository model
 
         Args:
             row: Database row dictionary
 
         Returns:
-            ConfiguredRepository model instance, or None if row contains invalid enum values
-            that cannot be converted (allows callers to skip invalid rows)
+            ConfiguredRepository model instance
 
-        Note:
-            Invalid enum values are logged but do not raise exceptions, allowing operations
-            to continue with valid data. This prevents the entire table from becoming unreadable
-            due to schema mismatches or corrupted data.
+        Raises:
+            ValueError: If row contains invalid enum values that cannot be converted
         """
         repository_id = row.get("id", "unknown")
 
@@ -90,10 +87,11 @@ class RepositoryConfigRepository:
                 repository_id=repository_id,
                 invalid_commands=default_commands_raw,
                 error=str(e),
-                exc_info=True,
-                action="Skipping invalid row - consider running data migration to fix enum values"
+                exc_info=True
             )
-            return None
+            raise ValueError(
+                f"Database contains invalid workflow steps for repository {repository_id}: {default_commands_raw}"
+            ) from e
 
         # Convert default_sandbox_type from string to SandboxType enum
         sandbox_type_raw = row.get("default_sandbox_type", "git_worktree")
@@ -105,10 +103,11 @@ class RepositoryConfigRepository:
                 repository_id=repository_id,
                 invalid_type=sandbox_type_raw,
                 error=str(e),
-                exc_info=True,
-                action="Skipping invalid row - consider running data migration to fix enum values"
+                exc_info=True
             )
-            return None
+            raise ValueError(
+                f"Database contains invalid sandbox type for repository {repository_id}: {sandbox_type_raw}"
+            ) from e
 
         return ConfiguredRepository(
             id=row["id"],
@@ -137,22 +136,7 @@ class RepositoryConfigRepository:
         try:
             response = self.client.table(self.table_name).select("*").order("created_at", desc=True).execute()
 
-            repositories = []
-            skipped_count = 0
-            for row in response.data:
-                repository = self._row_to_model(row)
-                if repository is not None:
-                    repositories.append(repository)
-                else:
-                    skipped_count += 1
-
-            if skipped_count > 0:
-                self._logger.warning(
-                    "repositories_skipped_due_to_invalid_data",
-                    skipped_count=skipped_count,
-                    total_rows=len(response.data),
-                    valid_count=len(repositories)
-                )
+            repositories = [self._row_to_model(row) for row in response.data]
 
             self._logger.info(
                 "repositories_listed",
@@ -175,10 +159,11 @@ class RepositoryConfigRepository:
             repository_id: UUID of the repository
 
         Returns:
-            ConfiguredRepository model or None if not found or if data is invalid
+            ConfiguredRepository model or None if not found
 
         Raises:
             Exception: If database query fails
+            ValueError: If repository data contains invalid enum values
         """
         try:
             response = self.client.table(self.table_name).select("*").eq("id", repository_id).execute()
@@ -191,15 +176,6 @@ class RepositoryConfigRepository:
                 return None
 
             repository = self._row_to_model(response.data[0])
-
-            if repository is None:
-                # Invalid enum values in database - treat as not found
-                self._logger.warning(
-                    "repository_has_invalid_data",
-                    repository_id=repository_id,
-                    message="Repository exists but contains invalid enum values - consider data migration"
-                )
-                return None
 
             self._logger.info(
                 "repository_retrieved",
@@ -257,16 +233,6 @@ class RepositoryConfigRepository:
             response = self.client.table(self.table_name).insert(data).execute()
 
             repository = self._row_to_model(response.data[0])
-            if repository is None:
-                # This should not happen for newly created repositories with valid data
-                # but handle defensively
-                error_msg = "Failed to convert newly created repository to model - data corruption detected"
-                self._logger.error(
-                    "repository_creation_model_conversion_failed",
-                    repository_url=repository_url,
-                    error=error_msg
-                )
-                raise ValueError(error_msg)
 
             self._logger.info(
                 "repository_created",
@@ -331,18 +297,6 @@ class RepositoryConfigRepository:
                 return None
 
             repository = self._row_to_model(response.data[0])
-            if repository is None:
-                # Repository exists but has invalid enum values - cannot update
-                error_msg = (
-                    f"Repository {repository_id} exists but contains invalid enum values. "
-                    "Cannot update - consider fixing data first via migration."
-                )
-                self._logger.error(
-                    "repository_update_failed_invalid_data",
-                    repository_id=repository_id,
-                    error=error_msg
-                )
-                raise ValueError(error_msg)
 
             self._logger.info(
                 "repository_updated",

@@ -157,12 +157,15 @@ def test_config_explicit_url_overrides_discovery_mode():
 def test_config_state_storage_type():
     """Test STATE_STORAGE_TYPE configuration"""
     import os
+    import importlib
 
     # Temporarily set the environment variable
     old_value = os.environ.get("STATE_STORAGE_TYPE")
     os.environ["STATE_STORAGE_TYPE"] = "file"
 
     try:
+        import src.agent_work_orders.config as config_module
+        importlib.reload(config_module)
         from src.agent_work_orders.config import AgentWorkOrdersConfig
         config = AgentWorkOrdersConfig()
         assert config.STATE_STORAGE_TYPE == "file"

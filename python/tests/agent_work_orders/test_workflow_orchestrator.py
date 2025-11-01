@@ -61,6 +61,7 @@ async def test_execute_workflow_default_commands(mock_dependencies):
     with patch("src.agent_work_orders.workflow_engine.workflow_operations.run_create_branch_step") as mock_branch, \
          patch("src.agent_work_orders.workflow_engine.workflow_operations.run_planning_step") as mock_plan, \
          patch("src.agent_work_orders.workflow_engine.workflow_operations.run_execute_step") as mock_execute, \
+         patch("src.agent_work_orders.workflow_engine.workflow_operations.run_review_step") as mock_review, \
          patch("src.agent_work_orders.workflow_engine.workflow_operations.run_commit_step") as mock_commit, \
          patch("src.agent_work_orders.workflow_engine.workflow_operations.run_create_pr_step") as mock_pr:
 
@@ -89,6 +90,14 @@ async def test_execute_workflow_default_commands(mock_dependencies):
             duration_seconds=30.0,
         )
 
+        mock_review.return_value = StepExecutionResult(
+            step=WorkflowStep.REVIEW,
+            agent_name="Reviewer",
+            success=True,
+            output="Review completed, all checks passed",
+            duration_seconds=10.0,
+        )
+
         mock_commit.return_value = StepExecutionResult(
             step=WorkflowStep.COMMIT,
             agent_name="Committer",
@@ -114,10 +123,11 @@ async def test_execute_workflow_default_commands(mock_dependencies):
             selected_commands=None,  # Should use default
         )
 
-        # Verify all 5 default commands were executed
+        # Verify all 6 default commands were executed in order
         assert mock_branch.called
         assert mock_plan.called
         assert mock_execute.called
+        assert mock_review.called
         assert mock_commit.called
         assert mock_pr.called
 
