@@ -1,6 +1,6 @@
-# Code Review
+# Review and Fix
 
-Review implemented work against a PRP specification to ensure code quality, correctness, and adherence to project standards.
+Review implemented work against a PRP specification, identify issues, and automatically fix blocker/major problems before committing.
 
 ## Variables
 
@@ -87,3 +87,34 @@ Return ONLY valid JSON (no markdown, no explanations) save to [report-#.json] in
   }
 }
 ```
+
+## Fix Issues
+
+After generating the review report, automatically fix blocker and major issues:
+
+**Parse the Report:**
+- Read the generated `PRPs/reports/report-#.json` file
+- Extract all issues with severity "blocker" or "major"
+
+**Apply Fixes:**
+
+For each blocker/major issue:
+1. Read the file mentioned in `file_path`
+2. Apply the fix described in `issue_resolution`
+3. Log what was fixed
+
+**Re-validate:**
+- Rerun linters: `uv run ruff check src/ --fix`
+- Rerun type checker: `uv run mypy src/`
+- Rerun tests: `uv run pytest tests/ -v`
+
+**Report Results:**
+- If all blockers fixed and validation passes → Output "✅ All critical issues fixed, validation passing"
+- If fixes failed or validation still failing → Output "⚠️ Some issues remain" with details
+- Minor issues can be left for manual review later
+
+**Important:**
+- Only fix blocker/major issues automatically
+- Minor issues should be left in the report for human review
+- If a fix might break something, skip it and note in output
+- Run validation after ALL fixes applied, not after each individual fix

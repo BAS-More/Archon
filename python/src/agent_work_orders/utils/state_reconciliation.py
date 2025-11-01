@@ -5,6 +5,7 @@ These tools help identify orphaned worktrees (exist on filesystem but not in dat
 and dangling state (exist in database but worktree deleted).
 """
 
+import os
 import shutil
 from pathlib import Path
 from typing import Any
@@ -139,11 +140,47 @@ async def reconcile_state(
 
     if fix:
         # Clean up orphaned worktrees
+        worktree_base = Path(config.WORKTREE_BASE_DIR)
+        base_dir_resolved = os.path.abspath(os.path.normpath(str(worktree_base)))
+        
         for orphan_path in orphans:
             try:
+                # Safety check: verify orphan_path is inside worktree base directory
+                orphan_path_resolved = os.path.abspath(os.path.normpath(orphan_path))
+                
+                # Verify path is within base directory and not the base directory itself
+                try:
+                    common_path = os.path.commonpath([base_dir_resolved, orphan_path_resolved])
+                    is_inside_base = common_path == base_dir_resolved
+                    is_not_base = orphan_path_resolved != base_dir_resolved
+                    # Check if path is a root directory (Unix / or Windows drive root like C:\)
+                    path_obj = Path(orphan_path_resolved)
+                    is_not_root = not (
+                        orphan_path_resolved in ("/", "\\") or
+                        (os.name == "nt" and len(path_obj.parts) == 2 and path_obj.parts[1] == "")
+                    )
+                except ValueError:
+                    # commonpath raises ValueError if paths are on different drives (Windows)
+                    is_inside_base = False
+                    is_not_base = True
+                    is_not_root = True
+                
+                if is_inside_base and is_not_base and is_not_root:
                 shutil.rmtree(orphan_path)
                 actions.append(f"Deleted orphaned worktree: {orphan_path}")
                 logger.info("orphaned_worktree_deleted", path=orphan_path)
+                else:
+                    # Safety check failed - do not delete
+                    actions.append(f"Skipped deletion of {orphan_path} (safety check failed: outside worktree base or invalid path)")
+                    logger.error(
+                        "orphaned_worktree_deletion_skipped_safety_check_failed",
+                        path=orphan_path,
+                        path_resolved=orphan_path_resolved,
+                        base_dir=base_dir_resolved,
+                        is_inside_base=is_inside_base,
+                        is_not_base=is_not_base,
+                        is_not_root=is_not_root,
+                    )
             except Exception as e:
                 actions.append(f"Failed to delete {orphan_path}: {e}")
                 logger.error("orphaned_worktree_delete_failed", path=orphan_path, error=str(e), exc_info=True)

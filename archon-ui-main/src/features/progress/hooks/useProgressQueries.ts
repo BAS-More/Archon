@@ -245,7 +245,7 @@ export function useMultipleOperations(
     completedIds.current.clear();
     errorIds.current.clear();
     notFoundCounts.current.clear();
-  }, []); // Stable dependency across reorderings
+  }, [_progressIdsKey]); // Stable dependency across reorderings
 
   const queries = useQueries({
     queries: progressIds.map((progressId) => ({

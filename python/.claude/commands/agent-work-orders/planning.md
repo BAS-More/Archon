@@ -66,7 +66,7 @@ So that <benefit/value>
 
 Use these files to implement the feature:
 
-<find and list the files that are relevant to the feature describe why they are relevant in bullet points. If there are new files that need to be created to implement the feature, list them in an h3 'New Files' section. inlcude line numbers for the relevant sections>
+<find and list the files that are relevant to the feature describe why they are relevant in bullet points. If there are new files that need to be created to implement the feature, list them in an h3 'New Files' section. include line numbers for the relevant sections>
 
 ## Relevant research docstring
 

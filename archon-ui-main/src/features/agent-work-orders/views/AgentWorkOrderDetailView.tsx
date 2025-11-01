@@ -15,6 +15,7 @@ import { RealTimeStats } from "../components/RealTimeStats";
 import { StepHistoryCard } from "../components/StepHistoryCard";
 import { WorkflowStepButton } from "../components/WorkflowStepButton";
 import { useStepHistory, useWorkOrder } from "../hooks/useAgentWorkOrderQueries";
+import { useAgentWorkOrdersStore } from "../state/agentWorkOrdersStore";
 import type { WorkflowStep } from "../types";
 
 /**
@@ -24,9 +25,9 @@ const ALL_WORKFLOW_STEPS: WorkflowStep[] = [
   "create-branch",
   "planning",
   "execute",
+  "prp-review",
   "commit",
   "create-pr",
-  "prp-review",
 ];
 
 export function AgentWorkOrderDetailView() {
@@ -37,6 +38,9 @@ export function AgentWorkOrderDetailView() {
 
   const { data: workOrder, isLoading: isLoadingWorkOrder, isError: isErrorWorkOrder } = useWorkOrder(id);
   const { data: stepHistory, isLoading: isLoadingSteps, isError: isErrorSteps } = useStepHistory(id);
+
+  // Get live progress from SSE for total steps count
+  const liveProgress = useAgentWorkOrdersStore((s) => (id ? s.liveProgress[id] : undefined));
 
   /**
    * Toggle step expansion
@@ -294,7 +298,7 @@ export function AgentWorkOrderDetailView() {
                       <div>
                         <p className="text-xs text-gray-500 dark:text-gray-400">Steps Completed</p>
                         <p className="text-2xl font-bold text-gray-900 dark:text-white mt-0.5">
-                          {stepHistory.steps.filter((s) => s.success).length} / {stepHistory.steps.length}
+                          {stepHistory.steps.filter((s) => s.success).length} / {liveProgress?.totalSteps ?? stepHistory.steps.length}
                         </p>
                       </div>
                     </div>

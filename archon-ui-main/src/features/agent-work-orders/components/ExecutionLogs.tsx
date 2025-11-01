@@ -1,4 +1,6 @@
+import { Trash2 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
+import { Button } from "@/features/ui/primitives/button";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/features/ui/primitives/select";
 import { cn } from "@/features/ui/primitives/styles";
 import { Switch } from "@/features/ui/primitives/switch";
@@ -10,6 +12,9 @@ interface ExecutionLogsProps {
 
   /** Whether logs are from live SSE stream (shows "Live" indicator) */
   isLive?: boolean;
+
+  /** Callback to clear logs (optional, defaults to no-op) */
+  onClearLogs?: () => void;
 }
 
 /**
@@ -59,13 +64,47 @@ function LogEntryRow({ log }: { log: LogEntry }) {
   );
 }
 
-export function ExecutionLogs({ logs, isLive = false }: ExecutionLogsProps) {
+export function ExecutionLogs({ logs, isLive = false, onClearLogs = () => {} }: ExecutionLogsProps) {
   const [autoScroll, setAutoScroll] = useState(true);
   const [levelFilter, setLevelFilter] = useState<string>("all");
+  const [localLogs, setLocalLogs] = useState<LogEntry[]>(logs);
+  const [isCleared, setIsCleared] = useState(false);
+  const previousLogsLengthRef = useRef<number>(logs.length);
   const scrollContainerRef = useRef<HTMLDivElement>(null);
 
+  // Update local logs when props change
+  useEffect(() => {
+    const currentLogsLength = logs.length;
+    const previousLogsLength = previousLogsLengthRef.current;
+
+    // If we cleared logs, only update if new logs arrive (length increases)
+    if (isCleared) {
+      if (currentLogsLength > previousLogsLength) {
+        // New logs arrived after clear - reset cleared state and show new logs
+        setLocalLogs(logs);
+        setIsCleared(false);
+      }
+      // Otherwise, keep local logs empty (user's cleared view)
+    } else {
+      // Normal case: update local logs with prop changes
+      setLocalLogs(logs);
+    }
+
+    previousLogsLengthRef.current = currentLogsLength;
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [logs]);
+
   // Filter logs by level
-  const filteredLogs = levelFilter === "all" ? logs : logs.filter((log) => log.level === levelFilter);
+  const filteredLogs = levelFilter === "all" ? localLogs : localLogs.filter((log) => log.level === levelFilter);
+
+  /**
+   * Handle clear logs button click
+   */
+  const handleClearLogs = () => {
+    setLocalLogs([]);
+    setIsCleared(true);
+    onClearLogs();
+  };
 
   /**
    * Auto-scroll to bottom when new logs arrive (if enabled)
@@ -74,7 +113,7 @@ export function ExecutionLogs({ logs, isLive = false }: ExecutionLogsProps) {
     if (autoScroll && scrollContainerRef.current) {
       scrollContainerRef.current.scrollTop = scrollContainerRef.current.scrollHeight;
     }
-  }, [logs.length, autoScroll]); // Trigger on new logs, not filtered logs
+  }, [localLogs.length, autoScroll]); // Trigger on new logs, not filtered logs
 
   return (
     <div className="border border-white/10 dark:border-gray-700/30 rounded-lg overflow-hidden bg-black/20 dark:bg-white/5 backdrop-blur">
@@ -136,6 +175,18 @@ export function ExecutionLogs({ logs, isLive = false }: ExecutionLogsProps) {
             </span>
           </div>
 
+          {/* Clear logs button */}
+          <Button
+            variant="ghost"
+            size="sm"
+            onClick={handleClearLogs}
+            className="h-8 text-xs text-gray-600 dark:text-gray-400 hover:text-red-600 dark:hover:text-red-400"
+            aria-label="Clear logs"
+            disabled={localLogs.length === 0}
+          >
+            <Trash2 className="w-3.5 h-3.5 mr-1.5" aria-hidden="true" />
+            Clear logs
+          </Button>
         </div>
       </div>
 

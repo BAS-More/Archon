@@ -5,7 +5,7 @@ FastAPI routes for agent work orders.
 
 import asyncio
 from datetime import datetime
-from typing import Any
+from typing import Any, Callable
 
 from fastapi import APIRouter, HTTPException, Query
 from sse_starlette.sse import EventSourceResponse
@@ -40,6 +40,93 @@ from .sse_streams import stream_work_order_logs
 
 logger = get_logger(__name__)
 router = APIRouter()
+
+# Registry to track background workflow tasks by work order ID
+# Enables monitoring, exception tracking, and cleanup
+_workflow_tasks: dict[str, asyncio.Task] = {}
+
+
+def _create_task_done_callback(agent_work_order_id: str) -> Callable[[asyncio.Task], None]:
+    """Create a done callback for workflow tasks
+    
+    Logs exceptions, updates work order status, and removes task from registry.
+    Note: This callback is synchronous but schedules async operations for status updates.
+    
+    Args:
+        agent_work_order_id: Work order ID to track
+    """
+    def on_task_done(task: asyncio.Task) -> None:
+        """Callback invoked when workflow task completes
+        
+        Inspects task.exception() to determine if workflow succeeded or failed,
+        logs appropriately, and updates work order status.
+        """
+        try:
+            # Check if task raised an exception
+            exception = task.exception()
+            
+            if exception is None:
+                # Task completed successfully
+                logger.info(
+                    "workflow_task_completed",
+                    agent_work_order_id=agent_work_order_id,
+                    status="completed",
+                )
+                # Note: Orchestrator handles updating status to COMPLETED
+                # so we don't need to update it here
+            else:
+                # Task failed with an exception
+                # Log full exception details with context
+                logger.exception(
+                    "workflow_task_failed",
+                    agent_work_order_id=agent_work_order_id,
+                    status="failed",
+                    exception_type=type(exception).__name__,
+                    exception_message=str(exception),
+                    exc_info=True,
+                )
+                
+                # Schedule async operation to update work order status if needed
+                # (execute_workflow_with_error_handling may have already done this)
+                async def update_status_if_needed() -> None:
+                    try:
+                        result = await state_repository.get(agent_work_order_id)
+                        if result:
+                            _, metadata = result
+                            current_status = metadata.get("status")
+                            if current_status != AgentWorkOrderStatus.FAILED:
+                                error_msg = f"Workflow task failed: {str(exception)}"
+                                await state_repository.update_status(
+                                    agent_work_order_id,
+                                    AgentWorkOrderStatus.FAILED,
+                                    error_message=error_msg,
+                                )
+                                logger.info(
+                                    "workflow_status_updated_to_failed",
+                                    agent_work_order_id=agent_work_order_id,
+                                )
+                    except Exception as update_error:
+                        # Log but don't raise - task is already failed
+                        logger.error(
+                            "workflow_status_update_failed_in_callback",
+                            agent_work_order_id=agent_work_order_id,
+                            update_error=str(update_error),
+                            original_exception=str(exception),
+                            exc_info=True,
+                        )
+                
+                # Schedule the async status update
+                asyncio.create_task(update_status_if_needed())
+        finally:
+            # Always remove task from registry when done (success or failure)
+            _workflow_tasks.pop(agent_work_order_id, None)
+            logger.debug(
+                "workflow_task_removed_from_registry",
+                agent_work_order_id=agent_work_order_id,
+            )
+    
+    return on_task_done
+
 
 # Initialize dependencies (singletons for MVP)
 state_repository = create_repository()
@@ -103,9 +190,15 @@ async def create_agent_work_order(
         # Save to repository
         await state_repository.create(state, metadata)
 
-        # Start workflow in background
-        asyncio.create_task(
-            orchestrator.execute_workflow(
+        # Wrapper function to handle exceptions from workflow execution
+        async def execute_workflow_with_error_handling() -> None:
+            """Execute workflow and handle any unhandled exceptions
+            
+            Broad exception handler ensures all exceptions are caught and logged,
+            with full context for debugging. Status is updated to FAILED on errors.
+            """
+            try:
+                await orchestrator.execute_workflow(
                 agent_work_order_id=agent_work_order_id,
                 repository_url=request.repository_url,
                 sandbox_type=request.sandbox_type,
@@ -113,6 +206,47 @@ async def create_agent_work_order(
                 selected_commands=request.selected_commands,
                 github_issue_number=request.github_issue_number,
             )
+            except Exception as e:
+                # Catch any exceptions that weren't handled by the orchestrator
+                # (e.g., exceptions during initialization, argument validation, etc.)
+                error_msg = str(e)
+                logger.exception(
+                    "workflow_execution_unhandled_exception",
+                    agent_work_order_id=agent_work_order_id,
+                    error=error_msg,
+                    exception_type=type(e).__name__,
+                    exc_info=True,
+                )
+                try:
+                    # Update work order status to FAILED
+                    await state_repository.update_status(
+                        agent_work_order_id,
+                        AgentWorkOrderStatus.FAILED,
+                        error_message=f"Workflow execution failed before orchestrator could handle it: {error_msg}",
+                    )
+                except Exception as update_error:
+                    # Log but don't raise - we've already caught the original error
+                    logger.error(
+                        "workflow_status_update_failed_after_exception",
+                        agent_work_order_id=agent_work_order_id,
+                        update_error=str(update_error),
+                        original_error=error_msg,
+                        exc_info=True,
+                    )
+                # Re-raise to ensure task.exception() returns the exception
+                raise
+
+        # Create and track background workflow task
+        task = asyncio.create_task(execute_workflow_with_error_handling())
+        _workflow_tasks[agent_work_order_id] = task
+        
+        # Attach done callback to log exceptions and update status
+        task.add_done_callback(_create_task_done_callback(agent_work_order_id))
+        
+        logger.debug(
+            "workflow_task_created_and_tracked",
+            agent_work_order_id=agent_work_order_id,
+            task_count=len(_workflow_tasks),
         )
 
         logger.info(

@@ -295,7 +295,7 @@ claude --version
 Check health endpoint to see dependency status:
 
 ```bash
-curl http://localhost:8052/health
+curl http://localhost:8053/health
 ```
 
 This shows:

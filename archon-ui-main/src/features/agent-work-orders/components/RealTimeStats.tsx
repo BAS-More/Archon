@@ -19,6 +19,18 @@ interface RealTimeStatsProps {
 const EMPTY_LOGS: never[] = [];
 
 /**
+ * Type guard to narrow LogEntry to one with required step_number and total_steps
+ */
+type LogEntryWithSteps = LogEntry & {
+  step_number: number;
+  total_steps: number;
+};
+
+function hasStepInfo(log: LogEntry): log is LogEntryWithSteps {
+  return log.step_number !== undefined && log.total_steps !== undefined;
+}
+
+/**
  * Calculate progress metrics from log entries
  * Used as fallback when no SSE progress data exists (e.g., after refresh)
  */
@@ -26,8 +38,8 @@ function useCalculateProgressFromLogs(logs: LogEntry[]): LiveProgress | null {
   return useMemo(() => {
     if (logs.length === 0) return null;
 
-    // Find latest progress-related logs
-    const stepLogs = logs.filter((log) => log.step_number !== undefined && log.total_steps !== undefined);
+    // Find latest progress-related logs using type guard for proper narrowing
+    const stepLogs = logs.filter(hasStepInfo);
     const latestStepLog = stepLogs[stepLogs.length - 1];
 
     const workflowCompleted = logs.some((log) => log.event === "workflow_completed");
@@ -48,13 +60,15 @@ function useCalculateProgressFromLogs(logs: LogEntry[]): LiveProgress | null {
     }
 
     if (latestStepLog) {
-      const completedSteps = latestStepLog.step_number! - 1;
-      const totalSteps = latestStepLog.total_steps!;
+      // Type guard ensures step_number and total_steps are defined, so safe to access
+      const stepNumber = latestStepLog.step_number;
+      const totalSteps = latestStepLog.total_steps;
+      const completedSteps = stepNumber - 1;
 
       return {
         currentStep: latestStepLog.step || "unknown",
-        stepNumber: latestStepLog.step_number,
-        totalSteps: latestStepLog.total_steps,
+        stepNumber: stepNumber,
+        totalSteps: totalSteps,
         progressPct: workflowCompleted ? 100 : Math.round((completedSteps / totalSteps) * 100),
         elapsedSeconds: latestElapsed,
         status: workflowCompleted ? "completed" : workflowFailed ? "failed" : "running",
@@ -137,6 +151,7 @@ export function RealTimeStats({ workOrderId }: RealTimeStatsProps) {
   // Zustand SSE slice - connection management and live data
   const connectToLogs = useAgentWorkOrdersStore((s) => s.connectToLogs);
   const disconnectFromLogs = useAgentWorkOrdersStore((s) => s.disconnectFromLogs);
+  const clearLogs = useAgentWorkOrdersStore((s) => s.clearLogs);
   const sseProgress = useAgentWorkOrdersStore((s) => s.liveProgress[workOrderId ?? ""]);
   const sseLogs = useAgentWorkOrdersStore((s) => s.liveLogs[workOrderId ?? ""]);
 
@@ -325,7 +340,17 @@ export function RealTimeStats({ workOrderId }: RealTimeStatsProps) {
       </div>
 
       {/* Collapsible Execution Logs */}
-      {showLogs && <ExecutionLogs logs={logs} isLive={isLiveData} />}
+      {showLogs && (
+        <ExecutionLogs
+          logs={logs}
+          isLive={isLiveData}
+          onClearLogs={() => {
+            if (workOrderId) {
+              clearLogs(workOrderId);
+            }
+          }}
+        />
+      )}
     </div>
   );
 }

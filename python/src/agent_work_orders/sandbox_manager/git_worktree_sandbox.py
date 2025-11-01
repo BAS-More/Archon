@@ -5,6 +5,8 @@ Enables parallel execution of multiple work orders without conflicts.
 """
 
 import asyncio
+import os
+import subprocess
 import time
 
 from ..models import CommandExecutionResult, SandboxSetupError
@@ -13,6 +15,7 @@ from ..utils.port_allocation import find_available_port_range
 from ..utils.structured_logger import get_logger
 from ..utils.worktree_operations import (
     create_worktree,
+    get_base_repo_path,
     get_worktree_path,
     remove_worktree,
     setup_worktree_environment,
@@ -36,6 +39,7 @@ class GitWorktreeSandbox:
         self.port_range_start: int | None = None
         self.port_range_end: int | None = None
         self.available_ports: list[int] = []
+        self.temp_branch: str | None = None  # Track temporary branch for cleanup
         self._logger = logger.bind(
             sandbox_identifier=sandbox_identifier,
             repository_url=repository_url,
@@ -63,12 +67,13 @@ class GitWorktreeSandbox:
 
             # Create worktree with temporary branch name
             # Agent will create the actual feature branch during execution
-            temp_branch = f"wo-{self.sandbox_identifier}"
+            # The temporary branch will be cleaned up in cleanup() method
+            self.temp_branch = f"wo-{self.sandbox_identifier}"
 
             worktree_path, error = create_worktree(
                 self.repository_url,
                 self.sandbox_identifier,
-                temp_branch,
+                self.temp_branch,
                 self._logger
             )
 
@@ -143,13 +148,15 @@ class GitWorktreeSandbox:
                 )
 
             duration = time.time() - start_time
-            success = process.returncode == 0
+            # Use actual returncode when available, or -1 as sentinel for None
+            exit_code = process.returncode if process.returncode is not None else -1
+            success = exit_code == 0
 
             result = CommandExecutionResult(
                 success=success,
                 stdout=stdout.decode() if stdout else None,
                 stderr=stderr.decode() if stderr else None,
-                exit_code=process.returncode or 0,
+                exit_code=exit_code,
                 error_message=None if success else stderr.decode() if stderr else "Command failed",
                 duration_seconds=duration,
             )
@@ -162,7 +169,7 @@ class GitWorktreeSandbox:
                 self._logger.error(
                     "command_execution_failed",
                     command=command,
-                    exit_code=process.returncode,
+                    exit_code=exit_code,
                     duration=duration,
                 )
 
@@ -195,25 +202,101 @@ class GitWorktreeSandbox:
             return None
 
     async def cleanup(self) -> None:
-        """Remove worktree"""
+        """Remove worktree and temporary branch
+
+        Removes the worktree directory and the temporary branch that was created
+        during setup. This ensures cleanup even if the agent failed before creating
+        the actual feature branch.
+        """
         self._logger.info("worktree_sandbox_cleanup_started")
 
         try:
-            success, error = remove_worktree(
+            # Remove the worktree first
+            worktree_success, error = remove_worktree(
                 self.repository_url,
                 self.sandbox_identifier,
                 self._logger
             )
-            if success:
-                self._logger.info("worktree_sandbox_cleanup_completed")
-            else:
+            
+            if not worktree_success:
                 self._logger.error(
                     "worktree_sandbox_cleanup_failed",
                     error=error
                 )
+            
+            # Delete the temporary branch if it was created
+            # Always try to delete branch even if worktree removal failed,
+            # as the branch may still exist and need cleanup
+            if self.temp_branch:
+                await self._delete_temp_branch()
+            
+            # Only log success if worktree removal succeeded
+            if worktree_success:
+                self._logger.info("worktree_sandbox_cleanup_completed")
         except Exception as e:
             self._logger.error(
                 "worktree_sandbox_cleanup_failed",
                 error=str(e),
                 exc_info=True
+            )
+
+    async def _delete_temp_branch(self) -> None:
+        """Delete the temporary branch from the base repository
+
+        Attempts to delete the temporary branch created during setup.
+        Fails gracefully if the branch doesn't exist or was already deleted.
+        """
+        if not self.temp_branch:
+            return
+
+        base_repo_path = get_base_repo_path(self.repository_url)
+
+        try:
+            # Check if base repo exists
+            if not os.path.exists(base_repo_path):
+                self._logger.warning(
+                    "temp_branch_cleanup_skipped",
+                    reason="Base repository does not exist",
+                    temp_branch=self.temp_branch
+                )
+                return
+
+            # Delete the branch (local only - don't force push to remote)
+            # Use -D to force delete even if not merged
+            cmd = ["git", "branch", "-D", self.temp_branch]
+            result = subprocess.run(
+                cmd,
+                capture_output=True,
+                text=True,
+                cwd=base_repo_path,
+            )
+
+            if result.returncode == 0:
+                self._logger.info(
+                    "temp_branch_deleted",
+                    temp_branch=self.temp_branch
+                )
+            else:
+                # Branch might not exist (already deleted or wasn't created)
+                if "not found" in result.stderr.lower() or "no such branch" in result.stderr.lower():
+                    self._logger.debug(
+                        "temp_branch_not_found",
+                        temp_branch=self.temp_branch,
+                        message="Branch may have been already deleted or never created"
+                    )
+                else:
+                    # Other error (e.g., branch is checked out)
+                    self._logger.warning(
+                        "temp_branch_deletion_failed",
+                        temp_branch=self.temp_branch,
+                        error=result.stderr,
+                        message="Branch may need manual cleanup"
+                    )
+        except Exception as e:
+            self._logger.warning(
+                "temp_branch_deletion_error",
+                temp_branch=self.temp_branch,
+                error=str(e),
+                exc_info=True,
+                message="Failed to delete temporary branch - may need manual cleanup"
             )

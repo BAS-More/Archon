@@ -34,9 +34,9 @@ const WORKFLOW_STEPS: { value: WorkflowStep; label: string; dependsOn?: Workflow
   { value: "create-branch", label: "Create Branch" },
   { value: "planning", label: "Planning" },
   { value: "execute", label: "Execute" },
+  { value: "prp-review", label: "Review/Fix", dependsOn: ["execute"] },
   { value: "commit", label: "Commit Changes", dependsOn: ["execute"] },
-  { value: "create-pr", label: "Create Pull Request", dependsOn: ["execute"] },
-  { value: "prp-review", label: "PRP Review" },
+  { value: "create-pr", label: "Create Pull Request", dependsOn: ["commit"] },
 ];
 
 export function CreateWorkOrderModal({ open, onOpenChange }: CreateWorkOrderModalProps) {
@@ -51,7 +51,7 @@ export function CreateWorkOrderModal({ open, onOpenChange }: CreateWorkOrderModa
   const [sandboxType, setSandboxType] = useState<SandboxType>("git_worktree");
   const [userRequest, setUserRequest] = useState("");
   const [githubIssueNumber, setGithubIssueNumber] = useState("");
-  const [selectedCommands, setSelectedCommands] = useState<WorkflowStep[]>(["create-branch", "planning", "execute"]);
+  const [selectedCommands, setSelectedCommands] = useState<WorkflowStep[]>(["create-branch", "planning", "execute", "prp-review", "commit", "create-pr"]);
   const [error, setError] = useState("");
   const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -85,11 +85,27 @@ export function CreateWorkOrderModal({ open, onOpenChange }: CreateWorkOrderModa
 
   /**
    * Toggle workflow step selection
+   * When unchecking a step, also uncheck steps that depend on it (cascade removal)
    */
   const toggleStep = (step: WorkflowStep) => {
     setSelectedCommands((prev) => {
       if (prev.includes(step)) {
-        return prev.filter((s) => s !== step);
+        // Removing a step - also remove steps that depend on it
+        const stepsToRemove = new Set([step]);
+
+        // Find all steps that transitively depend on the one being removed (cascade)
+        let changed = true;
+        while (changed) {
+          changed = false;
+          WORKFLOW_STEPS.forEach((s) => {
+            if (!stepsToRemove.has(s.value) && s.dependsOn?.some((dep) => stepsToRemove.has(dep))) {
+              stepsToRemove.add(s.value);
+              changed = true;
+            }
+          });
+        }
+
+        return prev.filter((s) => !stepsToRemove.has(s));
       }
       return [...prev, step];
     });
@@ -139,19 +155,41 @@ export function CreateWorkOrderModal({ open, onOpenChange }: CreateWorkOrderModa
 
     try {
       setIsSubmitting(true);
+
+      // Sort selected commands by WORKFLOW_STEPS order before sending to backend
+      // This ensures correct execution order regardless of checkbox click order
+      const sortedCommands = WORKFLOW_STEPS
+        .filter(step => selectedCommands.includes(step.value))
+        .map(step => step.value);
+
       await createWorkOrder.mutateAsync({
         repository_url: repositoryUrl,
         sandbox_type: sandboxType,
         user_request: userRequest,
         github_issue_number: githubIssueNumber || undefined,
-        selected_commands: selectedCommands,
+        selected_commands: sortedCommands,
       });
 
       // Success - close modal and reset
       resetForm();
       onOpenChange(false);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create work order");
+      // Preserve error details by truncating long messages instead of hiding them
+      // Show up to 500 characters to capture important debugging information
+      // while keeping the UI readable
+      const maxLength = 500;
+      let userMessage = "Failed to create work order. Please try again.";
+      
+      if (err instanceof Error && err.message) {
+        if (err.message.length <= maxLength) {
+          userMessage = err.message;
+        } else {
+          // Truncate but preserve the start which often contains the most important details
+          userMessage = `${err.message.slice(0, maxLength)}... (truncated, ${err.message.length - maxLength} more characters)`;
+        }
+      }
+      
+      setError(userMessage);
     } finally {
       setIsSubmitting(false);
     }

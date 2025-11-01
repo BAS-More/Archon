@@ -31,9 +31,9 @@ const WORKFLOW_STEPS: { value: WorkflowStep; label: string; description: string;
   { value: "create-branch", label: "Create Branch", description: "Create a new git branch for isolated work" },
   { value: "planning", label: "Planning", description: "Generate implementation plan" },
   { value: "execute", label: "Execute", description: "Implement the planned changes" },
+  { value: "prp-review", label: "Review/Fix", description: "Review implementation and fix issues", dependsOn: ["execute"] },
   { value: "commit", label: "Commit", description: "Commit changes to git", dependsOn: ["execute"] },
-  { value: "create-pr", label: "Create PR", description: "Create pull request", dependsOn: ["execute"] },
-  { value: "prp-review", label: "PRP Review", description: "Review against PRP document" },
+  { value: "create-pr", label: "Create PR", description: "Create pull request", dependsOn: ["commit"] },
 ];
 
 export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalProps) {
@@ -56,28 +56,28 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
   }, [repository]);
 
   /**
-   * Check if any selected steps depend on the given step
-   */
-  const hasSelectedDependents = (step: WorkflowStep): boolean => {
-    return selectedSteps.some((selectedStep) => {
-      const stepDef = WORKFLOW_STEPS.find((s) => s.value === selectedStep);
-      return stepDef?.dependsOn?.includes(step) ?? false;
-    });
-  };
-
-  /**
    * Toggle workflow step selection
-   * Prevents unchecking a step if other selected steps depend on it
+   * When unchecking a step, also uncheck steps that depend on it (cascade removal)
    */
   const toggleStep = (step: WorkflowStep) => {
     setSelectedSteps((prev) => {
       if (prev.includes(step)) {
-        // Attempting to uncheck - check if any selected steps depend on this one
-        if (hasSelectedDependents(step)) {
-          // Don't allow unchecking if dependents exist
-          return prev;
+        // Removing a step - also remove steps that depend on it
+        const stepsToRemove = new Set([step]);
+
+        // Find all steps that transitively depend on the one being removed (cascade)
+        let changed = true;
+        while (changed) {
+          changed = false;
+          WORKFLOW_STEPS.forEach((s) => {
+            if (!stepsToRemove.has(s.value) && s.dependsOn?.some((dep) => stepsToRemove.has(dep))) {
+              stepsToRemove.add(s.value);
+              changed = true;
+            }
+          });
         }
-        return prev.filter((s) => s !== step);
+
+        return prev.filter((s) => !stepsToRemove.has(s));
       }
       return [...prev, step];
     });
@@ -108,11 +108,17 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
 
     try {
       setIsSubmitting(true);
+
+      // Sort selected steps by WORKFLOW_STEPS order before sending to backend
+      const sortedSteps = WORKFLOW_STEPS
+        .filter(step => selectedSteps.includes(step.value))
+        .map(step => step.value);
+
       await updateRepository.mutateAsync({
         id: repository.id,
         request: {
           default_sandbox_type: repository.default_sandbox_type,
-          default_commands: selectedSteps,
+          default_commands: sortedSteps,
         },
       });
 
@@ -186,26 +192,8 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
                 {WORKFLOW_STEPS.map((step) => {
                   const isSelected = selectedSteps.includes(step.value);
                     const isDisabledForEnable = isStepDisabled(step);
-                    const hasDependents = isSelected && hasSelectedDependents(step.value);
-                    const cannotUncheck = hasDependents;
-                    const isCheckboxDisabled = isDisabledForEnable || cannotUncheck;
 
-                    // Get dependent step names for tooltip message
-                    const dependentSteps = isSelected
-                      ? selectedSteps
-                          .filter((selectedStep) => {
-                            const stepDef = WORKFLOW_STEPS.find((s) => s.value === selectedStep);
-                            return stepDef?.dependsOn?.includes(step.value) ?? false;
-                          })
-                          .map((depStep) => {
-                            const stepDef = WORKFLOW_STEPS.find((s) => s.value === depStep);
-                            return stepDef?.label ?? depStep;
-                          })
-                      : [];
-
-                    const tooltipMessage = cannotUncheck
-                      ? `Cannot uncheck: ${dependentSteps.join(", ")} ${dependentSteps.length === 1 ? "depends" : "depend"} on this step`
-                      : isDisabledForEnable && step.dependsOn
+                    const tooltipMessage = isDisabledForEnable && step.dependsOn
                         ? `Requires: ${step.dependsOn.map((dep) => WORKFLOW_STEPS.find((s) => s.value === dep)?.label ?? dep).join(", ")}`
                         : undefined;
 
@@ -214,13 +202,12 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
                         id={`edit-step-${step.value}`}
                         checked={isSelected}
                         onCheckedChange={() => {
-                          if (!isCheckboxDisabled) {
+                          if (!isDisabledForEnable) {
                             toggleStep(step.value);
                           }
                         }}
-                        disabled={isCheckboxDisabled}
+                        disabled={isDisabledForEnable}
                         aria-label={step.label}
-                        className={cannotUncheck ? "cursor-not-allowed opacity-75" : ""}
                       />
                     );
 
@@ -236,17 +223,12 @@ export function EditRepositoryModal({ open, onOpenChange }: EditRepositoryModalP
                         <Label
                           htmlFor={`edit-step-${step.value}`}
                           className={
-                            isCheckboxDisabled
+                            isDisabledForEnable
                               ? "text-gray-400 dark:text-gray-500 cursor-not-allowed"
                               : "cursor-pointer"
                           }
                         >
                         {step.label}
-                          {cannotUncheck && (
-                            <span className="ml-1 text-xs text-cyan-500 dark:text-cyan-400" aria-hidden="true">
-                              (locked)
-                            </span>
-                          )}
                       </Label>
                     </div>
                   );

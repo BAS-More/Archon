@@ -112,14 +112,27 @@ class GitBranchSandbox:
                     duration_seconds=duration,
                 )
 
+            # Explicit check for None returncode (should never happen after communicate())
+            if process.returncode is None:
+                self._logger.error(
+                    "command_execution_unexpected_state",
+                    command=command,
+                    error="process.returncode is None after communicate() - this indicates a serious bug",
+                )
+                raise RuntimeError(
+                    f"Process returncode is None after communicate() for command: {command}. "
+                    "This should never happen and indicates a serious issue."
+                )
+
             duration = time.time() - start_time
-            success = process.returncode == 0
+            exit_code = process.returncode
+            success = exit_code == 0
 
             result = CommandExecutionResult(
                 success=success,
                 stdout=stdout.decode() if stdout else None,
                 stderr=stderr.decode() if stderr else None,
-                exit_code=process.returncode or 0,
+                exit_code=exit_code,
                 error_message=None if success else stderr.decode() if stderr else "Command failed",
                 duration_seconds=duration,
             )
@@ -132,7 +145,7 @@ class GitBranchSandbox:
                 self._logger.error(
                     "command_execution_failed",
                     command=command,
-                    exit_code=process.returncode,
+                    exit_code=exit_code,
                     duration=duration,
                 )
 

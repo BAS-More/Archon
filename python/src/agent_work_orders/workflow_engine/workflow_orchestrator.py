@@ -70,7 +70,7 @@ class WorkflowOrchestrator:
         """
         # Default commands if not provided
         if selected_commands is None:
-            selected_commands = ["create-branch", "planning", "execute", "commit", "create-pr"]
+            selected_commands = ["create-branch", "planning", "execute", "prp-review", "commit", "create-pr"]
 
         # Bind work order context for structured logging
         bind_work_order_context(agent_work_order_id)
@@ -198,43 +198,30 @@ class WorkflowOrchestrator:
                         agent_work_order_id, result.output or ""
                     )
                 elif command_name == "create-pr":
-                    # Calculate git stats before marking as completed
-                    # Branch name is stored in context from create-branch step
-                    branch_name = context.get("create-branch")
-                    git_stats = await self._calculate_git_stats(
-                        branch_name,
-                        sandbox.working_dir
-                    )
+                    # Store PR URL for final metadata update
+                    context["github_pull_request_url"] = result.output
 
-                    await self.state_repository.update_status(
-                        agent_work_order_id,
-                        AgentWorkOrderStatus.COMPLETED,
-                        github_pull_request_url=result.output,
-                        git_commit_count=git_stats["commit_count"],
-                        git_files_changed=git_stats["files_changed"],
-                    )
-                    # Save final step history
-                    await self.state_repository.save_step_history(agent_work_order_id, step_history)
-                    bound_logger.info(
-                        "agent_work_order_completed",
-                        total_steps=len(step_history.steps),
-                        git_commit_count=git_stats["commit_count"],
-                        git_files_changed=git_stats["files_changed"],
-                    )
-                    return  # Exit early if PR created
-
-            # Calculate git stats for workflows that complete without PR
+            # Calculate git stats and mark as completed
             branch_name = context.get("create-branch")
+            completion_metadata = {}
+
             if branch_name:
                 git_stats = await self._calculate_git_stats(
                     branch_name, sandbox.working_dir
                 )
-                await self.state_repository.update_status(
-                    agent_work_order_id,
-                    AgentWorkOrderStatus.COMPLETED,
-                    git_commit_count=git_stats["commit_count"],
-                    git_files_changed=git_stats["files_changed"],
-                )
+                completion_metadata["git_commit_count"] = git_stats["commit_count"]
+                completion_metadata["git_files_changed"] = git_stats["files_changed"]
+
+            # Include PR URL if create-pr step was executed
+            pr_url = context.get("github_pull_request_url")
+            if pr_url:
+                completion_metadata["github_pull_request_url"] = pr_url
+
+            await self.state_repository.update_status(
+                agent_work_order_id,
+                AgentWorkOrderStatus.COMPLETED,
+                **completion_metadata
+            )
 
             # Save final step history
             await self.state_repository.save_step_history(agent_work_order_id, step_history)

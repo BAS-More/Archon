@@ -30,9 +30,9 @@ const WORKFLOW_STEPS: { value: WorkflowStep; label: string; description: string;
   { value: "create-branch", label: "Create Branch", description: "Create a new git branch for isolated work" },
   { value: "planning", label: "Planning", description: "Generate implementation plan" },
   { value: "execute", label: "Execute", description: "Implement the planned changes" },
+  { value: "prp-review", label: "Review/Fix", description: "Review implementation and fix issues", dependsOn: ["execute"] },
   { value: "commit", label: "Commit", description: "Commit changes to git", dependsOn: ["execute"] },
-  { value: "create-pr", label: "Create PR", description: "Create pull request", dependsOn: ["execute"] },
-  { value: "prp-review", label: "PRP Review", description: "Review against PRP document" },
+  { value: "create-pr", label: "Create PR", description: "Create pull request", dependsOn: ["commit"] },
 ];
 
 /**
@@ -58,11 +58,27 @@ export function AddRepositoryModal({ open, onOpenChange }: AddRepositoryModalPro
 
   /**
    * Toggle workflow step selection
+   * When unchecking a step, also uncheck steps that depend on it (cascade removal)
    */
   const toggleStep = (step: WorkflowStep) => {
     setSelectedSteps((prev) => {
       if (prev.includes(step)) {
-        return prev.filter((s) => s !== step);
+        // Removing a step - also remove steps that depend on it
+        const stepsToRemove = new Set([step]);
+
+        // Find all steps that transitively depend on the one being removed (cascade)
+        let changed = true;
+        while (changed) {
+          changed = false;
+          WORKFLOW_STEPS.forEach((s) => {
+            if (!stepsToRemove.has(s.value) && s.dependsOn?.some((dep) => stepsToRemove.has(dep))) {
+              stepsToRemove.add(s.value);
+              changed = true;
+            }
+          });
+        }
+
+        return prev.filter((s) => !stepsToRemove.has(s));
       }
       return [...prev, step];
     });
