@@ -164,10 +164,10 @@ export function WorkOrderRow({
           <span className="text-sm text-gray-900 dark:text-white">{displayRepo}</span>
         </td>
 
-        {/* Request Summary */}
+        {/* Branch */}
         <td className="px-4 py-2">
           <p className="text-sm text-gray-900 dark:text-white line-clamp-2">
-            {workOrder.github_issue_number ? `Issue #${workOrder.github_issue_number}` : "Work order in progress"}
+            {workOrder.git_branch_name || <span className="text-gray-400 dark:text-gray-500">-</span>}
           </p>
         </td>
 

@@ -7,19 +7,20 @@ import subprocess
 from pathlib import Path
 
 
-async def get_commit_count(branch_name: str, repo_path: str | Path) -> int:
-    """Get the number of commits on a branch
+async def get_commit_count(branch_name: str, repo_path: str | Path, base_branch: str = "main") -> int:
+    """Get the number of commits added on a branch compared to base
 
     Args:
         branch_name: Name of the git branch
         repo_path: Path to the git repository
+        base_branch: Base branch to compare against (default: "main")
 
     Returns:
-        Number of commits on the branch
+        Number of commits added on this branch (not total branch history)
     """
     try:
         result = subprocess.run(
-            ["git", "rev-list", "--count", branch_name],
+            ["git", "rev-list", "--count", f"origin/{base_branch}..{branch_name}"],
             cwd=str(repo_path),
             capture_output=True,
             text=True,
