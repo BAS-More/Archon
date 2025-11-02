@@ -139,6 +139,33 @@ async def test_get_container_status_http_unhealthy(mock_mcp_url):
 
 
 @pytest.mark.asyncio
+async def test_get_container_status_http_zero_uptime(mock_mcp_url):
+    """Test HTTP health check preserves 0 uptime for freshly-launched MCP."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"success": True, "uptime_seconds": 0, "health": {}}
+    mock_response.status_code = 200
+
+    with (
+        patch("src.server.api_routes.mcp_api.get_mcp_url", return_value=mock_mcp_url),
+        patch("src.server.api_routes.mcp_api.get_mcp_monitoring_config") as mock_get_config,
+        patch("httpx.AsyncClient") as mock_client_class,
+    ):
+        mock_get_config.return_value = MCPMonitoringConfig(enable_docker_socket=False, health_check_timeout=5)
+
+        mock_client = MagicMock()
+        mock_client.get = AsyncMock(return_value=mock_response)
+        mock_client_class.return_value.__aenter__.return_value = mock_client
+        mock_client_class.return_value.__aexit__.return_value = None
+
+        result = await get_container_status_http()
+
+        assert result["status"] == "running"
+        assert result["uptime"] == 0  # Important: 0 should be preserved, not None
+        assert result["logs"] == []
+        mock_client.get.assert_called_once_with(f"{mock_mcp_url}/health")
+
+
+@pytest.mark.asyncio
 async def test_get_container_status_http_error(mock_mcp_url):
     """Test HTTP health check when an unexpected error occurs."""
     with (

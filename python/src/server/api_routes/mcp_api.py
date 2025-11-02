@@ -44,9 +44,10 @@ async def get_container_status_http() -> dict[str, Any]:
             data = response.json()
 
             # Transform to expected API contract
+            uptime_value = data.get("uptime_seconds")
             return {
                 "status": "running" if data.get("success") else "unhealthy",
-                "uptime": int(data.get("uptime_seconds")) if data.get("uptime_seconds") else None,
+                "uptime": int(uptime_value) if uptime_value is not None else None,
                 "logs": [],  # Historical artifact, kept for API compatibility
             }
 
