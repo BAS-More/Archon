@@ -33,7 +33,12 @@ services:
     networks:
       - app-network
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock # Docker socket for MCP container control
+      # SECURITY: Docker socket mounting removed (CVE-2025-9074 - CVSS 9.3)
+      # MCP status now monitored via HTTP health checks (secure, portable)
+      # To re-enable Docker socket mode (not recommended):
+      #   1. Set ENABLE_DOCKER_SOCKET_MONITORING=true in .env
+      #   2. Uncomment the line below
+      # - /var/run/docker.sock:/var/run/docker.sock # SECURITY RISK: root-equivalent host access
       - ./python/src:/app/src # Mount source code for hot reload
       - ./python/tests:/app/tests # Mount tests for UI test execution
       - ./migration:/app/migration # Mount migration files for version tracking
