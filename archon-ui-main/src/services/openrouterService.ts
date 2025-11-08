@@ -23,7 +23,7 @@ export interface OpenRouterModelListResponse {
 }
 
 class OpenRouterService {
-	private baseUrl = getApiUrl();
+	private getBaseUrl = () => getApiUrl();
 	private cacheKey = "openrouter_models_cache";
 	private cacheTTL = 5 * 60 * 1000; // 5 minutes
 
@@ -101,7 +101,7 @@ class OpenRouterService {
 				return cached;
 			}
 
-			const response = await fetch(`${this.baseUrl}/api/openrouter/models`, {
+			const response = await fetch(`${this.getBaseUrl()}/api/openrouter/models`, {
 				method: "GET",
 				headers: {
 					"Content-Type": "application/json",
@@ -114,6 +114,11 @@ class OpenRouterService {
 			}
 
 			const data = await response.json();
+
+			// Validate response structure
+			if (!data.embedding_models || !Array.isArray(data.embedding_models)) {
+				throw new Error("Invalid response structure from OpenRouter API");
+			}
 
 			// Cache the successful response
 			this.cacheModels(data);
