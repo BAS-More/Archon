@@ -29,7 +29,6 @@ from pathlib import Path
 from typing import Any
 
 from dotenv import load_dotenv
-
 from mcp.server.fastmcp import Context, FastMCP
 from starlette.requests import Request
 from starlette.responses import JSONResponse
@@ -557,11 +556,10 @@ async def http_health_endpoint(request: Request):
     """HTTP health check endpoint for monitoring systems."""
     logger.info("Health endpoint called via HTTP")
     try:
-        # Calculate uptime from module load time
-        uptime = time.time() - _server_start_time
-
         # Try to get the shared context for detailed health info
         if _shared_context and hasattr(_shared_context, "health_status"):
+            # Use actual server startup time for consistency with MCP health_check tool
+            uptime = time.time() - _shared_context.startup_time
             await perform_health_checks(_shared_context)
 
             return JSONResponse({
@@ -571,7 +569,8 @@ async def http_health_endpoint(request: Request):
                 "timestamp": datetime.now().isoformat(),
             })
         else:
-            # Server starting up or no MCP connections yet - still return uptime
+            # Server starting up or no MCP connections yet - use module load time as fallback
+            uptime = time.time() - _server_start_time
             return JSONResponse({
                 "success": True,
                 "status": "ready",
@@ -580,7 +579,7 @@ async def http_health_endpoint(request: Request):
                 "timestamp": datetime.now().isoformat(),
             })
     except Exception as e:
-        logger.error(f"HTTP health check failed: {e}")
+        logger.error(f"HTTP health check failed: {e}", exc_info=True)
         return JSONResponse({
             "success": False,
             "error": f"Health check failed: {str(e)}",
