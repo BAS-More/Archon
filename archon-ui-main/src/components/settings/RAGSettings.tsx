@@ -1291,7 +1291,7 @@ const manualTestConnection = async (
             Select {activeSelection === 'chat' ? 'Chat' : 'Embedding'} Provider
           </label>
           <div className={`grid gap-3 mb-4 ${
-            activeSelection === 'chat' ? 'grid-cols-6' : 'grid-cols-3'
+            activeSelection === 'chat' ? 'grid-cols-6' : 'grid-cols-4'
           }`}>
             {[
               { key: 'openai', name: 'OpenAI', logo: '/img/OpenAI.png', color: 'green' },
