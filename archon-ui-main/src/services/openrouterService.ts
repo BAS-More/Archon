@@ -183,7 +183,40 @@ class OpenRouterService {
 
 			// Validate response structure
 			if (!data.embedding_models || !Array.isArray(data.embedding_models)) {
-				throw new Error("Invalid response structure from OpenRouter API");
+				throw new Error("Invalid response structure: missing or invalid embedding_models array");
+			}
+
+			if (typeof data.total_count !== "number" || data.total_count < 0) {
+				throw new Error("Invalid response structure: total_count must be a non-negative number");
+			}
+
+			if (data.total_count !== data.embedding_models.length) {
+				throw new Error(
+					`Response structure mismatch: total_count (${data.total_count}) does not match embedding_models length (${data.embedding_models.length})`,
+				);
+			}
+
+			// Validate at least one model has required fields
+			if (data.embedding_models.length > 0) {
+				const firstModel = data.embedding_models[0];
+				if (
+					!firstModel.id ||
+					typeof firstModel.id !== "string" ||
+					!firstModel.provider ||
+					typeof firstModel.provider !== "string" ||
+					typeof firstModel.dimensions !== "number" ||
+					firstModel.dimensions <= 0
+				) {
+					throw new Error(
+						"Invalid model structure: models must have id (string), provider (string), and positive dimensions",
+					);
+				}
+
+				// Validate provider name is from expected set
+				const validProviders = ["openai", "google", "qwen", "mistralai"];
+				if (!validProviders.includes(firstModel.provider)) {
+					throw new Error(`Invalid provider name: ${firstModel.provider}`);
+				}
 			}
 
 			// Cache the successful response
