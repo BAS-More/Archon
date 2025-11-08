@@ -31,6 +31,8 @@ from typing import Any
 from dotenv import load_dotenv
 
 from mcp.server.fastmcp import Context, FastMCP
+from starlette.requests import Request
+from starlette.responses import JSONResponse
 
 # Add the project root to Python path for imports
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -544,6 +546,56 @@ except Exception as e:
     logger.error(f"💥 Critical error during module registration: {e}")
     logger.error(traceback.format_exc())
     raise
+
+
+# Track server start time at module level for health checks
+_server_start_time = time.time()
+
+
+# Define health endpoint function at module level
+async def http_health_endpoint(request: Request):
+    """HTTP health check endpoint for monitoring systems."""
+    logger.info("Health endpoint called via HTTP")
+    try:
+        # Calculate uptime from module load time
+        uptime = time.time() - _server_start_time
+
+        # Try to get the shared context for detailed health info
+        if _shared_context and hasattr(_shared_context, "health_status"):
+            await perform_health_checks(_shared_context)
+
+            return JSONResponse({
+                "success": True,
+                "health": _shared_context.health_status,
+                "uptime_seconds": uptime,
+                "timestamp": datetime.now().isoformat(),
+            })
+        else:
+            # Server starting up or no MCP connections yet - still return uptime
+            return JSONResponse({
+                "success": True,
+                "status": "ready",
+                "uptime_seconds": uptime,
+                "message": "MCP server is running (no active connections yet)",
+                "timestamp": datetime.now().isoformat(),
+            })
+    except Exception as e:
+        logger.error(f"HTTP health check failed: {e}")
+        return JSONResponse({
+            "success": False,
+            "error": f"Health check failed: {str(e)}",
+            "uptime_seconds": time.time() - _server_start_time,
+            "timestamp": datetime.now().isoformat(),
+        }, status_code=500)
+
+
+# Register health endpoint using FastMCP's custom_route decorator
+try:
+    mcp.custom_route("/health", methods=["GET"])(http_health_endpoint)
+    logger.info("✓ HTTP /health endpoint registered successfully")
+except Exception as e:
+    logger.error(f"✗ Failed to register /health endpoint: {e}")
+    logger.error(traceback.format_exc())
 
 
 def main():
