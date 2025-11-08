@@ -54,6 +54,61 @@ class OpenRouterService {
 	}
 
 	/**
+	 * Type guard to validate cache entry structure
+	 */
+	private isCacheEntry(
+		value: unknown,
+	): value is { data: OpenRouterModelListResponse; timestamp: number } {
+		if (typeof value !== "object" || value === null) {
+			return false;
+		}
+
+		const obj = value as Record<string, unknown>;
+
+		// Validate timestamp is a number
+		if (typeof obj.timestamp !== "number") {
+			return false;
+		}
+
+		// Validate data property exists and is an object
+		if (typeof obj.data !== "object" || obj.data === null) {
+			return false;
+		}
+
+		const data = obj.data as Record<string, unknown>;
+
+		// Validate OpenRouterModelListResponse structure
+		if (!Array.isArray(data.embedding_models)) {
+			return false;
+		}
+
+		if (typeof data.total_count !== "number") {
+			return false;
+		}
+
+		// Validate each model in the array has required fields
+		for (const model of data.embedding_models) {
+			if (typeof model !== "object" || model === null) {
+				return false;
+			}
+			const m = model as Record<string, unknown>;
+			if (
+				typeof m.id !== "string" ||
+				typeof m.provider !== "string" ||
+				typeof m.name !== "string" ||
+				typeof m.dimensions !== "number" ||
+				typeof m.context_length !== "number" ||
+				typeof m.pricing_per_1m_tokens !== "number" ||
+				typeof m.supports_dimension_reduction !== "boolean"
+			) {
+				return false;
+			}
+		}
+
+		return true;
+	}
+
+	/**
 	 * Get cached models if available and not expired
 	 */
 	private getCachedModels(): OpenRouterModelListResponse | null {
@@ -61,16 +116,27 @@ class OpenRouterService {
 			const cached = sessionStorage.getItem(this.cacheKey);
 			if (!cached) return null;
 
-			const { data, timestamp } = JSON.parse(cached);
-			const now = Date.now();
+			const parsed: unknown = JSON.parse(cached);
 
-			if (now - timestamp > this.cacheTTL) {
+			// Validate cache structure
+			if (!this.isCacheEntry(parsed)) {
+				// Cache is corrupted, remove it to avoid repeated failures
 				sessionStorage.removeItem(this.cacheKey);
 				return null;
 			}
 
-			return data;
+			const now = Date.now();
+
+			// Check expiration
+			if (now - parsed.timestamp > this.cacheTTL) {
+				sessionStorage.removeItem(this.cacheKey);
+				return null;
+			}
+
+			return parsed.data;
 		} catch {
+			// JSON parsing failed or other error, clear cache
+			sessionStorage.removeItem(this.cacheKey);
 			return null;
 		}
 	}
