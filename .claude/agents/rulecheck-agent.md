@@ -27,9 +27,6 @@ hooks:
         - type: command
           command: ".claude/skills/rulecheck/hooks/slack-notify.sh"
           statusMessage: "Notifying Slack..."
-        - type: http
-          url: SLACK_WEBHOOK_REDACTED
-          statusMessage: "Posting run event to Slack..."
         - type: agent
           prompt: |
             You are a meta-judge evaluating the rulecheck agent's execution.
