@@ -470,6 +470,9 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
   function handleSave(): void {
     mutation.mutate({
 <<<<<<< HEAD
+<<<<<<< HEAD
+=======
+>>>>>>> 701a2ac1 (fix: remove remaining hardcoded provider assumptions and regenerate types)
       assistant,
       assistants: assistantSettings,
 =======
