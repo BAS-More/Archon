@@ -18,12 +18,16 @@ import {
   setCodebaseEnvVar,
   deleteCodebaseEnvVar,
 } from '@/lib/api';
+<<<<<<< HEAD
 import type {
   SafeConfigResponse,
   CodebaseResponse,
   ProviderDefaults,
   ProviderInfo,
 } from '@/lib/api';
+=======
+import type { SafeConfigResponse, CodebaseResponse, UpdateAssistantConfigBody } from '@/lib/api';
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
 
 const selectClass =
   'h-9 rounded-md border border-border bg-surface-elevated text-text-primary px-3 text-sm focus:outline-none focus:ring-1 focus:ring-ring [&>option]:bg-surface-elevated [&>option]:text-text-primary';
@@ -395,8 +399,18 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
     staleTime: 5 * 60 * 1000,
   });
   const [assistant, setAssistant] = useState<string>(config.assistant);
+<<<<<<< HEAD
   const [assistantSettings, setAssistantSettings] = useState<Record<string, ProviderDefaults>>(
     config.assistants
+=======
+  const [claudeModel, setClaudeModel] = useState(config.assistants.claude.model ?? 'sonnet');
+  const [codexModel, setCodexModel] = useState(config.assistants.codex.model ?? '');
+  const [reasoning, setReasoning] = useState<'minimal' | 'low' | 'medium' | 'high' | 'xhigh'>(
+    config.assistants.codex.modelReasoningEffort ?? 'medium'
+  );
+  const [webSearch, setWebSearch] = useState<'disabled' | 'cached' | 'live'>(
+    config.assistants.codex.webSearchMode ?? 'disabled'
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
   );
   const [saveMsg, setSaveMsg] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -455,8 +469,20 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
 
   function handleSave(): void {
     mutation.mutate({
+<<<<<<< HEAD
       assistant,
       assistants: assistantSettings,
+=======
+      assistant: assistant as UpdateAssistantConfigBody['assistant'],
+      claude: { model: claudeModel },
+      // The generated type requires `model` when `codex` is present; omit the codex key
+      // entirely when no model is set so the server treats it as "no codex changes".
+      ...(codexModel
+        ? {
+            codex: { model: codexModel, modelReasoningEffort: reasoning, webSearchMode: webSearch },
+          }
+        : {}),
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
     });
   }
 
@@ -477,7 +503,11 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
               }}
               className={selectClass}
             >
+<<<<<<< HEAD
               {allProviderEntries.map(p => (
+=======
+              {(providers ?? []).map(p => (
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
                 <option key={p.id} value={p.id}>
                   {p.displayName}
                 </option>

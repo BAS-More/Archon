@@ -277,12 +277,35 @@ export async function executeWorkflow(
 
   const docsDir = config.docsPath ?? 'docs/';
 
+<<<<<<< HEAD
   // Resolve provider and model once (used by all nodes).
   // Provider is explicit: node.provider ?? workflow.provider ?? config.assistant.
   // Model strings pass through to the SDK as-is — the SDK validates at request time.
   const resolvedProvider: string = workflow.provider ?? config.assistant;
   const providerSource = workflow.provider ? 'workflow definition' : 'config';
   if (!isRegisteredProvider(resolvedProvider)) {
+=======
+  // Resolve provider and model once (used by all nodes)
+  // When workflow sets a model but not a provider, infer provider from the model.
+  // e.g. model: sonnet → provider: claude, even if config.assistant is codex.
+  let resolvedProvider: string;
+  let providerSource: string;
+  if (workflow.provider) {
+    resolvedProvider = workflow.provider;
+    providerSource = 'workflow definition';
+  } else if (workflow.model) {
+    resolvedProvider = inferProviderFromModel(workflow.model, config.assistant);
+    providerSource = 'inferred from workflow model';
+  } else {
+    resolvedProvider = config.assistant;
+    providerSource = 'config';
+  }
+  const assistantDefaults = (
+    config.assistants as Record<string, Record<string, unknown> | undefined>
+  )[resolvedProvider];
+  const resolvedModel = workflow.model ?? (assistantDefaults?.model as string | undefined);
+  if (!isModelCompatible(resolvedProvider, resolvedModel)) {
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
     throw new Error(
       `Workflow '${workflow.name}': unknown provider '${resolvedProvider}'. ` +
         `Registered: ${getRegisteredProviders()

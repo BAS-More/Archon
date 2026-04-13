@@ -350,10 +350,25 @@ async function resolveNodeProviderAndModel(
   model: string | undefined;
   options: SendQueryOptions | undefined;
 }> {
+<<<<<<< HEAD
   // Provider is explicit: node.provider ?? workflow.provider. Model never
   // influences provider selection. Model strings pass through to the SDK.
   const provider: string = node.provider ?? workflowProvider;
   if (!isRegisteredProvider(provider)) {
+=======
+  const provider: string = node.provider ?? inferProviderFromModel(node.model, workflowProvider);
+
+  const providerAssistantConfig = (
+    config.assistants as Record<string, Record<string, unknown> | undefined>
+  )[provider];
+  const model: string | undefined =
+    node.model ??
+    (provider === workflowProvider
+      ? workflowModel
+      : (providerAssistantConfig?.model as string | undefined));
+
+  if (!isModelCompatible(provider, model)) {
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
     throw new Error(
       `Node '${node.id}': unknown provider '${provider}'. ` +
         `Registered: ${getRegisteredProviders()
@@ -465,7 +480,8 @@ async function resolveNodeProviderAndModel(
   };
 
   // Pass assistantConfig from config — provider parses internally
-  const assistantConfig = config.assistants[provider] ?? {};
+  const assistantConfig =
+    (config.assistants as Record<string, Record<string, unknown> | undefined>)[provider] ?? {};
 
   const options: SendQueryOptions = {
     ...baseOptions,
@@ -1702,7 +1718,12 @@ function buildLoopNodeOptions(
   if (config.envVars && Object.keys(config.envVars).length > 0) {
     options.env = config.envVars;
   }
+<<<<<<< HEAD
   options.assistantConfig = config.assistants[provider] ?? {};
+=======
+  options.assistantConfig =
+    (config.assistants as Record<string, Record<string, unknown> | undefined>)[provider] ?? {};
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
   // Pass workflow-level options as nodeConfig so providers can apply them
   if (workflowLevelOptions) {
     options.nodeConfig = {
@@ -2727,6 +2748,7 @@ export async function executeDagWorkflow(
 
           // 3b. Loop node dispatch — manages its own AI sessions and iteration
           if (isLoopNode(node)) {
+<<<<<<< HEAD
             // Resolve per-node provider/model overrides (same logic as other node types).
             // Provider is explicit; model passes through to the SDK. Throw on an
             // unknown provider so the outer catch below emits the standard
@@ -2741,11 +2763,33 @@ export async function executeDagWorkflow(
               );
             }
             const loopAssistantConfig = config.assistants[loopProvider];
+=======
+            // Resolve per-node provider/model overrides (same logic as other node types)
+            const loopProvider: string =
+              node.provider ?? inferProviderFromModel(node.model, workflowProvider);
+            const loopAssistantConfig = (
+              config.assistants as Record<string, Record<string, unknown> | undefined>
+            )[loopProvider];
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
             const loopModel: string | undefined =
               node.model ??
               (loopProvider === workflowProvider
                 ? workflowModel
                 : (loopAssistantConfig?.model as string | undefined));
+<<<<<<< HEAD
+=======
+
+            if (!isModelCompatible(loopProvider, loopModel)) {
+              return {
+                nodeId: node.id,
+                output: {
+                  state: 'failed' as const,
+                  output: '',
+                  error: `Node '${node.id}': model "${loopModel ?? 'default'}" is not compatible with provider "${loopProvider}"`,
+                },
+              };
+            }
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
 
             const output = await executeLoopNode(
               deps,

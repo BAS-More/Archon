@@ -135,7 +135,11 @@ export const dagNodeBaseSchema = z.object({
   when: z.string().optional(),
   trigger_rule: triggerRuleSchema.optional(),
   model: z.string().optional(),
+<<<<<<< HEAD
   provider: z.string().trim().min(1).optional(),
+=======
+  provider: z.string().min(1).optional(),
+>>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
   context: z.enum(['fresh', 'shared']).optional(),
   output_format: z.record(z.unknown()).optional(),
   allowed_tools: z.array(z.string()).optional(),
