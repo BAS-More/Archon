@@ -9,6 +9,23 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # ─── Tier 0: Credential probe (secrets not accessible in job if:) ──────
+  check-secrets:
+    runs-on: ubuntu-latest
+    outputs:
+      has-claude-key: ${{ steps.probe.outputs.has-claude-key }}
+    steps:
+      - id: probe
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$ANTHROPIC_API_KEY" ]; then
+            echo "has-claude-key=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "has-claude-key=false" >> "$GITHUB_OUTPUT"
+            echo "::notice::ANTHROPIC_API_KEY not set — e2e-claude and e2e-mixed will be skipped"
+          fi
+
   # ─── Tier 1: Deterministic (no API keys needed) ────────────────────────
   e2e-deterministic:
     runs-on: ubuntu-latest
@@ -34,6 +51,10 @@ jobs:
   e2e-claude:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    needs: check-secrets
+    # Skip when no Claude API key is configured (proxy mode supported via
+    # ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY secrets together)
+    if: needs.check-secrets.outputs.has-claude-key == 'true'
     steps:
       - uses: actions/checkout@v4
 
@@ -53,6 +74,7 @@ jobs:
       - name: Run Claude smoke test
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         run: |
           # YAML `env:` values don't expand `~`, so set CLAUDE_BIN_PATH in the
           # shell where $HOME resolves. The native installer drops the binary
@@ -93,7 +115,8 @@ jobs:
   e2e-mixed:
     runs-on: ubuntu-latest
     timeout-minutes: 5
-    needs: [e2e-claude, e2e-codex]
+    needs: [check-secrets, e2e-claude, e2e-codex]
+    if: needs.check-secrets.outputs.has-claude-key == 'true'
     steps:
       - uses: actions/checkout@v4
 
