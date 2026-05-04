@@ -19,7 +19,7 @@ import { BUNDLED_IS_BINARY, getArchonEnvPath } from '@archon/paths';
 // import.meta.dir is frozen at build time, so skip in compiled binaries.
 const envPath = BUNDLED_IS_BINARY ? undefined : resolve(import.meta.dir, '..', '..', '..', '.env');
 
-if (envPath) {
+if (envPath && existsSync(envPath)) {
   const dotenvResult = config({ path: envPath });
   if (dotenvResult.error) {
     // Use console.error since logger depends on env vars (LOG_LEVEL)
