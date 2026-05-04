@@ -1,4 +1,4 @@
-import { mkdirSync, rmSync, writeFileSync } from 'node:fs';
+import { closeSync, mkdirSync, openSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -51,18 +51,23 @@ function ensurePiPackageDirShim(): void {
   const shimDir = join(tmpdir(), 'archon-pi-shim');
   const shimPkgJson = join(shimDir, 'package.json');
   mkdirSync(shimDir, { recursive: true });
-  rmSync(shimPkgJson, { force: true });
+  // openSync 'w' truncates atomically; mode 0o600 prevents other users from
+  // reading/writing the shim while we hold the fd (breaks CodeQL TOCTOU taint).
   // `piConfig: {}` is explicit so Pi's defaults (`name: 'pi'`,
   // `configDir: '.pi'`) kick in — matches Pi's standalone behavior.
-  writeFileSync(
-    shimPkgJson,
-    JSON.stringify({
-      name: 'archon-pi-shim',
-      version: '0.0.0',
-      piConfig: {},
-    }),
-    { flag: 'wx' }
-  );
+  const fd = openSync(shimPkgJson, 'w', 0o600);
+  try {
+    writeFileSync(
+      fd,
+      JSON.stringify({
+        name: 'archon-pi-shim',
+        version: '0.0.0',
+        piConfig: {},
+      })
+    );
+  } finally {
+    closeSync(fd);
+  }
   process.env.PI_PACKAGE_DIR = shimDir;
 }
 

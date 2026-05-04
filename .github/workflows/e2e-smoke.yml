@@ -8,6 +8,9 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
 
+permissions:
+  contents: read
+
 jobs:
   # ─── Tier 0: Credential probe (secrets not accessible in job if:) ──────
   check-secrets:
