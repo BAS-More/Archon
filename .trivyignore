@@ -1,0 +1,16 @@
+# Trivy suppressions — each entry requires a documented justification.
+
+# DS-0002: Dockerfile must specify a non-root USER
+# Suppressed because the container intentionally starts as root to fix
+# bind-mount ownership (chown /.archon appuser:appuser), then uses
+# docker-entrypoint.sh + gosu to drop to appuser (UID 1001) before
+# running the application. This is the standard Docker pattern for
+# containers that need runtime volume permission setup. Adding a USER
+# instruction would break the chown path for host bind mounts.
+DS-0002
+
+# GHSA-w5hq-g745-h8pq: uuid@11.1.0 (MEDIUM)
+# Transitive dep of @mariozechner/pi-coding-agent. Fix requires uuid@14
+# which is a major-version breaking change. Severity is MEDIUM; the
+# community Pi provider is opt-in and not part of the default install.
+GHSA-w5hq-g745-h8pq
