@@ -43,6 +43,7 @@ describe('Workflow Loader', () => {
   beforeEach(async () => {
     // Create unique temp directory for each test securely
     testDir = await mkdtemp(join(tmpdir(), 'workflow-test-'));
+  });
 
   afterEach(async () => {
     // Clean up temp directory
