@@ -45,7 +45,7 @@ jobs:
         uses: astral-sh/setup-uv@v4
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Run deterministic workflow
         run: bun run cli workflow run e2e-deterministic --no-worktree "smoke test"
@@ -72,7 +72,7 @@ jobs:
           echo "$HOME/.local/bin" >> $GITHUB_PATH
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Run Claude smoke test
         env:
@@ -106,7 +106,7 @@ jobs:
         run: npm install -g @openai/codex
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Run Codex smoke test
         env:
@@ -142,7 +142,7 @@ jobs:
         run: npm install -g @openai/codex
 
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: bun install
 
       - name: Run mixed providers test
         env:
