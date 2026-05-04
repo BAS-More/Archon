@@ -1165,6 +1165,8 @@ describe('workflow dispatch routing — interactive flag', () => {
     // (11th positional arg) so the approve/reject API handlers can dispatch
     // resume back through the orchestrator.
     const callArgs = mockExecuteWorkflow.mock.calls[0] as unknown[];
+    // executeWorkflow is called with 11 positional args; index 10 is parentConversationId
+    expect(callArgs).toHaveLength(11);
     expect(callArgs[10]).toBe('conv-1'); // parentConversationId = conversation.id
   });
 

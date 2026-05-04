@@ -239,3 +239,7 @@ PR #871). When approved, the run transitions through `failed` status briefly so
 that `findResumableRun` picks it up — this avoids duplicating resume logic. The
 `metadata.approval_response` field distinguishes approved-then-resumed from
 genuinely-failed runs.
+
+Interactive loop gates follow a different path: the run stays `paused`, the
+approve endpoint auto-dispatches to the orchestrator, and the natural-language
+resume path (`getPausedWorkflowRun`) handles the transition.
