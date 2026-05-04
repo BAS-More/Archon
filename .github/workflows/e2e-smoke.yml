@@ -34,6 +34,9 @@ jobs:
   e2e-claude:
     runs-on: ubuntu-latest
     timeout-minutes: 5
+    # Skip when no Claude API key is configured (proxy mode supported via
+    # ANTHROPIC_BASE_URL + ANTHROPIC_API_KEY secrets together)
+    if: ${{ secrets.ANTHROPIC_API_KEY != '' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -53,6 +56,7 @@ jobs:
       - name: Run Claude smoke test
         env:
           ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+          ANTHROPIC_BASE_URL: ${{ secrets.ANTHROPIC_BASE_URL }}
         run: |
           # YAML `env:` values don't expand `~`, so set CLAUDE_BIN_PATH in the
           # shell where $HOME resolves. The native installer drops the binary
