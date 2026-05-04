@@ -270,7 +270,7 @@ The Web UI and CLI work out of the box. Optionally connect a chat platform for r
 ```
 ┌─────────────────────────────────────────────────────────┐
 │  Platform Adapters (Web UI, CLI, Telegram, Slack,       │
-│                    Discord, GitHub)                      │
+│                    Discord, GitHub)                     │
 └──────────────────────────┬──────────────────────────────┘
                            │
                            ▼
@@ -284,7 +284,7 @@ The Web UI and CLI work out of the box. Optionally connect a chat platform for r
       ▼                ▼          ▼                ▼
 ┌───────────┐  ┌────────────┐  ┌──────────────────────────┐
 │  Command  │  │  Workflow  │  │    AI Assistant Clients  │
-│  Handler  │  │  Executor  │  │      (Claude / Codex)    │
+│  Handler  │  │  Executor  │  │   (Claude / Codex / Pi)  │
 │  (Slash)  │  │  (YAML)    │  │                          │
 └───────────┘  └────────────┘  └──────────────────────────┘
       │              │                      │
@@ -310,16 +310,37 @@ Full documentation is available at **[archon.diy](https://archon.diy)**.
 | [Authoring Workflows](https://archon.diy/guides/authoring-workflows/) | Create custom YAML workflows |
 | [Authoring Commands](https://archon.diy/guides/authoring-commands/) | Create reusable AI commands |
 | [Configuration](https://archon.diy/reference/configuration/) | All config options, env vars, YAML settings |
-| [AI Assistants](https://archon.diy/getting-started/ai-assistants/) | Claude and Codex setup details |
+| [AI Assistants](https://archon.diy/getting-started/ai-assistants/) | Claude, Codex, and Pi setup details |
 | [Deployment](https://archon.diy/deployment/) | Docker, VPS, production setup |
 | [Architecture](https://archon.diy/reference/architecture/) | System design and internals |
 | [Troubleshooting](https://archon.diy/reference/troubleshooting/) | Common issues and fixes |
+
+## Telemetry
+
+Archon sends a single anonymous event — `workflow_invoked` — each time a workflow starts, so maintainers can see which workflows get real usage and prioritize accordingly. **No PII, ever.**
+
+**What's collected:** the workflow name, the workflow description (both authored by you in YAML), the platform that triggered it (`cli`, `web`, `slack`, etc.), the Archon version, and a random install UUID stored at `~/.archon/telemetry-id`. Nothing else.
+
+**What's *not* collected:** your code, prompts, messages, git remotes, file paths, usernames, tokens, AI output, workflow node details — none of it.
+
+**Opt out:** set any of these in your environment:
+
+```bash
+ARCHON_TELEMETRY_DISABLED=1
+DO_NOT_TRACK=1        # de facto standard honored by Astro, Bun, Prisma, Nuxt, etc.
+```
+
+Self-host PostHog or use a different project by setting `POSTHOG_API_KEY` and `POSTHOG_HOST`.
 
 ## Contributing
 
 Contributions welcome! See the open [issues](https://github.com/coleam00/Archon/issues) for things to work on.
 
 Please read [CONTRIBUTING.md](CONTRIBUTING.md) before submitting a pull request.
+
+## Star History
+
+[![Star History Chart](https://api.star-history.com/chart?repos=coleam00/Archon&type=date&legend=top-left)](https://www.star-history.com/?repos=coleam00%2FArchon&type=date&legend=top-left)
 
 ## License
 

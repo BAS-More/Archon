@@ -19,6 +19,8 @@ export const SSE_BASE_URL = import.meta.env.DEV
   ? `http://${window.location.hostname}:${apiPort}`
   : '';
 
+export { getCodebaseInput } from '@/lib/codebase-input';
+
 export interface ConversationResponse {
   id: string;
   platform_type: string;
@@ -54,6 +56,7 @@ export interface HealthResponse {
   runningWorkflows: number;
   version?: string;
   is_docker: boolean;
+  activePlatforms?: string[];
 }
 
 async function fetchJSON<T>(url: string, options?: RequestInit): Promise<T> {
