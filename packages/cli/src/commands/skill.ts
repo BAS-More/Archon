@@ -8,7 +8,7 @@
  * Always overwrites existing files to ensure the latest skill version
  * shipped with the current Archon binary is installed.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { existsSync, mkdirSync, writeFileSync } from 'fs'; // existsSync used for absoluteTarget check below
 import { dirname, join, resolve } from 'path';
 
 /**
@@ -32,9 +32,7 @@ export async function copyArchonSkill(targetPath: string): Promise<void> {
   for (const [relativePath, content] of Object.entries(BUNDLED_SKILL_FILES)) {
     const dest = join(skillRoot, relativePath);
     const destDir = dirname(dest);
-    if (!existsSync(destDir)) {
-      mkdirSync(destDir, { recursive: true });
-    }
+    mkdirSync(destDir, { recursive: true });
     writeFileSync(dest, content);
   }
 }
