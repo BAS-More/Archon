@@ -753,7 +753,7 @@ describe('substituteNodeOutputRefs -- shell escaping', () => {
   it('object JSON field becomes JSON stringified when escapedForBash=true', () => {
     const outputs = new Map([['a', makeOutput('completed', JSON.stringify({ nested: { x: 1 } }))]]);
     expect(substituteNodeOutputRefs('echo $a.output.nested', outputs, true)).toBe(
-      `echo '{"x":1}'`
+      'echo '{"x":1}''
     );
   });
 
