@@ -6,6 +6,12 @@ export {
   getArchonWorkspacesPath,
   getArchonWorktreesPath,
   getArchonConfigPath,
+  getArchonEnvPath,
+  getRepoArchonEnvPath,
+  getHomeWorkflowsPath,
+  getHomeCommandsPath,
+  getHomeScriptsPath,
+  getLegacyHomeWorkflowsPath,
   getCommandFolderSearchPaths,
   getWorkflowFolderSearchPaths,
   getAppArchonBasePath,
@@ -44,5 +50,6 @@ export {
 } from './update-check';
 export type { UpdateCheckResult } from './update-check';
 
-// CWD env isolation
-export { stripCwdEnv } from './strip-cwd-env';
+// Anonymous telemetry
+export { captureWorkflowInvoked, shutdownTelemetry, isTelemetryDisabled } from './telemetry';
+export type { WorkflowInvokedProperties } from './telemetry';

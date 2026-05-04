@@ -1,17 +1,12 @@
 /**
- * Side-effect boot module: strip Bun-auto-loaded CWD `.env` keys immediately
- * on import. Import this as the FIRST import in CLI/server entry points to
- * guarantee the strip runs before any module that reads `process.env` at
- * load time (e.g. the Pino logger in `@archon/paths/logger`).
+ * Side-effect entry point: strips Bun-auto-loaded CWD .env keys at import time.
  *
- * Usage:
- *   import '@archon/paths/strip-cwd-env-boot';  // must be the first import
- *   // ...other imports...
+ * Import this as the FIRST import in CLI entry points so it runs
+ * before any module that reads process.env at initialization time.
  *
- * The separation between `strip-cwd-env.ts` (pure function, testable) and
- * this boot file (side-effect wrapper) keeps the stripping logic unit-testable
- * while still providing the "runs before everything else" guarantee that
- * entry points need.
+ * @example
+ * // packages/cli/src/cli.ts — must be the very first import
+ * import '@archon/paths/strip-cwd-env-boot';
  */
 import { stripCwdEnv } from './strip-cwd-env';
 
