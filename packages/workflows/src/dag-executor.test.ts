@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, mock, spyOn, type Mock } from 'bun:test';
-import { mkdir, writeFile, rm } from 'fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 import * as git from '@archon/git';
@@ -385,8 +385,7 @@ describe('DAG Loader -- cycle detection', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-    await mkdir(testDir, { recursive: true });
+    testDir = await mkdtemp(join(tmpdir(), 'dag-test-'));
   });
 
   afterEach(async () => {
@@ -783,7 +782,7 @@ describe('executeDagWorkflow -- tool restrictions', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-exec-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-exec-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'My command prompt for $USER_MESSAGE');
@@ -998,7 +997,7 @@ describe('executeDagWorkflow -- bash nodes', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-bash-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-bash-test-'));
     await mkdir(testDir, { recursive: true });
 
     mockSendQueryDag.mockClear();
@@ -1344,7 +1343,7 @@ describe('executeDagWorkflow -- output_format structured output', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-output-fmt-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-output-fmt-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'classify.md'), 'Classify this: $USER_MESSAGE');
@@ -1650,7 +1649,7 @@ describe('executeDagWorkflow -- when condition parse errors (fail-closed)', () =
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-parse-err-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-parse-err-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'Do something for $USER_MESSAGE');
@@ -1780,7 +1779,7 @@ describe('executeDagWorkflow -- node-level retry for transient errors', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-retry-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-retry-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'Do something for $USER_MESSAGE');
@@ -1971,7 +1970,7 @@ describe('executeDagWorkflow -- tool_called event persistence', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-tool-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-tool-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'My command prompt for $USER_MESSAGE');
@@ -2077,10 +2076,7 @@ describe('executeDagWorkflow -- tool_completed event emission', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-toolcomplete-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-toolcomplete-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'My command prompt for $USER_MESSAGE');
@@ -2220,7 +2216,7 @@ describe('loadMcpConfig', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-mcp-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-mcp-test-'));
     await mkdir(testDir, { recursive: true });
   });
 
@@ -2342,7 +2338,7 @@ describe('executeDagWorkflow -- skills options', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-exec-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-exec-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'My command prompt for $USER_MESSAGE');
@@ -2821,10 +2817,7 @@ describe('executeDagWorkflow -- resume with priorCompletedNodes', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-resume-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-resume-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'step1.md'), 'Step 1 prompt');
@@ -4340,7 +4333,7 @@ describe('executeDagWorkflow -- break after result (no hang on subprocess exit)'
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-break-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-break-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'Command prompt $ARGUMENTS');
@@ -4461,10 +4454,7 @@ describe('executeDagWorkflow -- terminal node output selection', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-terminal-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-terminal-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'Command prompt $ARGUMENTS');
@@ -4730,10 +4720,7 @@ describe('executeDagWorkflow -- cancel node', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-cancel-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-cancel-test-'));
     await mkdir(testDir, { recursive: true });
   });
 
@@ -4832,10 +4819,7 @@ describe('executeDagWorkflow -- credit exhaustion', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-credit-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-credit-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
 
@@ -4910,10 +4894,7 @@ describe('executeDagWorkflow -- approval node', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-approval-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-approval-test-'));
     await mkdir(join(testDir, '.archon', 'commands'), { recursive: true });
     mockSendQueryDag.mockClear();
     mockGetAgentProviderDag.mockClear();
@@ -5393,7 +5374,7 @@ describe('executeDagWorkflow -- env var injection', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-env-test-${Date.now()}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-env-test-'));
     await mkdir(testDir, { recursive: true });
     await writeFile(join(testDir, '.archon', 'commands', 'my-cmd.md'), '# Test', {
       flag: 'w',
@@ -5479,10 +5460,7 @@ describe('executeDagWorkflow -- Claude SDK advanced options', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-sdk-opts-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-sdk-opts-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'My command prompt');
@@ -5758,7 +5736,7 @@ describe('executeDagWorkflow -- cost tracking', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-cost-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-cost-test-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'My command prompt');
@@ -5958,10 +5936,7 @@ describe('executeDagWorkflow -- script nodes', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-script-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-script-test-'));
     await mkdir(testDir, { recursive: true });
 
     mockSendQueryDag.mockClear();
@@ -6533,7 +6508,7 @@ describe('loadConfiguredMcpServerNames', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `mcp-names-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'mcp-names-'));
     await mkdir(testDir, { recursive: true });
   });
 
@@ -6594,7 +6569,7 @@ describe('executeDagWorkflow -- MCP failure filtering', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(tmpdir(), `dag-mcp-filter-${Date.now()}-${Math.random().toString(36).slice(2)}`);
+    testDir = await mkdtemp(join(tmpdir(), 'dag-mcp-filter-'));
     const commandsDir = join(testDir, '.archon', 'commands');
     await mkdir(commandsDir, { recursive: true });
     await writeFile(join(commandsDir, 'my-cmd.md'), 'cmd prompt');
@@ -6745,10 +6720,7 @@ describe('executeDagWorkflow -- final status derivation', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    testDir = join(
-      tmpdir(),
-      `dag-status-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-    );
+    testDir = await mkdtemp(join(tmpdir(), 'dag-status-test-'));
     await mkdir(testDir, { recursive: true });
 
     mockSendQueryDag.mockClear();
