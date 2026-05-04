@@ -1,4 +1,4 @@
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
+import { mkdirSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 
@@ -40,7 +40,7 @@ import { parsePiModelRef } from './model-ref';
  * (which fails inside a compiled archon binary). Pi only reads three
  * optional fields from that package.json — `piConfig.name`, `piConfig.configDir`,
  * and `version` — so the stub is genuinely minimal. Idempotent: the file is
- * only written once per host (existsSync check), and the env var is set on
+ * written idempotently on every call (same content each time), and the env var is set on
  * every call so multiple PiProvider instances stay consistent.
  *
  * Done on each sendQuery rather than at module load so (a) the file write
@@ -50,19 +50,17 @@ import { parsePiModelRef } from './model-ref';
 function ensurePiPackageDirShim(): void {
   const shimDir = join(tmpdir(), 'archon-pi-shim');
   const shimPkgJson = join(shimDir, 'package.json');
-  if (!existsSync(shimPkgJson)) {
-    mkdirSync(shimDir, { recursive: true });
-    // `piConfig: {}` is explicit so Pi's defaults (`name: 'pi'`,
-    // `configDir: '.pi'`) kick in — matches Pi's standalone behavior.
-    writeFileSync(
-      shimPkgJson,
-      JSON.stringify({
-        name: 'archon-pi-shim',
-        version: '0.0.0',
-        piConfig: {},
-      })
-    );
-  }
+  mkdirSync(shimDir, { recursive: true });
+  // `piConfig: {}` is explicit so Pi's defaults (`name: 'pi'`,
+  // `configDir: '.pi'`) kick in — matches Pi's standalone behavior.
+  writeFileSync(
+    shimPkgJson,
+    JSON.stringify({
+      name: 'archon-pi-shim',
+      version: '0.0.0',
+      piConfig: {},
+    })
+  );
   process.env.PI_PACKAGE_DIR = shimDir;
 }
 
