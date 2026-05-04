@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock, type Mock } from 'bun:test';
-import { mkdir, writeFile, rm, mkdtemp } from 'fs/promises';
+import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -41,7 +41,7 @@ describe('Workflow Loader', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    // Create unique temp directory for each test securely
+    // Create unique temp directory for each test
     testDir = await mkdtemp(join(tmpdir(), 'workflow-test-'));
   });
 
@@ -741,8 +741,7 @@ nodes:
     const originalArchonDocker = process.env.ARCHON_DOCKER;
 
     beforeEach(async () => {
-      homeDir = join(tmpdir(), `home-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-      await mkdir(homeDir, { recursive: true });
+      homeDir = await mkdtemp(join(tmpdir(), 'home-test-'));
       process.env.ARCHON_HOME = homeDir;
       delete process.env.ARCHON_DOCKER;
       // The deprecation warning uses a module-scoped flag; reset between tests
@@ -867,8 +866,7 @@ nodes:
     const originalArchonDocker = process.env.ARCHON_DOCKER;
 
     beforeEach(async () => {
-      homeDir = join(tmpdir(), `legacy-test-${Date.now()}-${Math.random().toString(36).slice(2)}`);
-      await mkdir(homeDir, { recursive: true });
+      homeDir = await mkdtemp(join(tmpdir(), 'legacy-test-'));
       process.env.ARCHON_HOME = homeDir;
       delete process.env.ARCHON_DOCKER;
       const { resetLegacyHomeWarningForTests } = await import('./workflow-discovery');
