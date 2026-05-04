@@ -72,10 +72,14 @@ mock.module('../db/codebases', () => ({
   createCodebase: mock(() => Promise.resolve({ id: 'new-codebase-id' })),
 }));
 
+const mockUpdateSession = mock(() => Promise.resolve());
+const mockTransitionSession = mock(() =>
+  Promise.resolve({ id: 'session-1', assistant_session_id: null })
+);
 mock.module('../db/sessions', () => ({
   getActiveSession: mock(() => Promise.resolve(null)),
-  updateSession: mock(() => Promise.resolve()),
-  transitionSession: mock(() => Promise.resolve({ id: 'session-1', assistant_session_id: null })),
+  updateSession: mockUpdateSession,
+  transitionSession: mockTransitionSession,
 }));
 
 const mockParseCommand = mock(
@@ -159,6 +163,16 @@ mock.module('./orchestrator', () => ({
 mock.module('./prompt-builder', () => ({
   buildOrchestratorPrompt: mock(() => 'orchestrator system prompt'),
   buildProjectScopedPrompt: mock(() => 'project scoped system prompt'),
+  formatWorkflowContextSection: mock((results: unknown[]) =>
+    results.length > 0 ? '## Recent Workflow Results\n\n...' : ''
+  ),
+}));
+
+const mockGetRecentWorkflowResultMessages = mock(() => Promise.resolve([]));
+mock.module('../db/messages', () => ({
+  addMessage: mock(() => Promise.resolve()),
+  listMessages: mock(() => Promise.resolve([])),
+  getRecentWorkflowResultMessages: mockGetRecentWorkflowResultMessages,
 }));
 
 mock.module('@archon/isolation', () => ({
@@ -1089,6 +1103,42 @@ describe('workflow dispatch routing — interactive flag', () => {
 
     expect(mockExecuteWorkflow).toHaveBeenCalled();
     expect(mockDispatchBackgroundWorkflow).not.toHaveBeenCalled();
+    // Regression for the auto-resume plumbing: the interactive web dispatch
+    // must pass the caller conversation's DB id as parentConversationId
+    // (11th positional arg) so the approve/reject API handlers can dispatch
+    // resume back through the orchestrator.
+    const callArgs = mockExecuteWorkflow.mock.calls[0] as unknown[];
+    expect(callArgs[10]).toBe('conv-1'); // parentConversationId = conversation.id
+  });
+
+  test('foreground_resume_detected: passes parentConversationId to executeWorkflow when a resumable run exists', async () => {
+    // Regression for the foreground-resume branch added as part of the
+    // auto-resume fix: when `findResumableRunByParentConversation` returns a
+    // paused run, the orchestrator picks the working_path from that run and
+    // must still carry parentConversationId forward so the API helpers can
+    // keep dispatching resume on subsequent approvals.
+    mockGetOrCreateConversation.mockReturnValueOnce(Promise.resolve(makeDispatchConversation()));
+    mockGetCodebase.mockReturnValueOnce(Promise.resolve(makeDispatchCodebase()));
+    mockHandleCommand.mockReturnValueOnce(Promise.resolve(makeWorkflowResult(true)));
+    mockFindResumableRunByParentConversation.mockReturnValueOnce(
+      Promise.resolve({
+        id: 'resumable-run-1',
+        workflow_name: 'test-workflow',
+        working_path: '/repos/test-repo/worktrees/feature',
+        parent_conversation_id: 'conv-1',
+        status: 'failed',
+      })
+    );
+
+    const platform = makePlatform(); // getPlatformType returns 'web'
+    await handleMessage(platform, 'conv-1', '/workflow run test-workflow');
+
+    expect(mockExecuteWorkflow).toHaveBeenCalled();
+    const callArgs = mockExecuteWorkflow.mock.calls[0] as unknown[];
+    // cwd (position 3) should come from the resumable run's working_path
+    expect(callArgs[3]).toBe('/repos/test-repo/worktrees/feature');
+    // parentConversationId (position 10) should still be the caller conversation id
+    expect(callArgs[10]).toBe('conv-1');
   });
 
   test('calls dispatchBackgroundWorkflow for non-interactive workflow on web', async () => {
@@ -1481,5 +1531,148 @@ describe('discoverAllWorkflows — merge repo workflows over global', () => {
 
     // discoverWorkflowsWithConfig should have been called twice (global + repo)
     expect(mockDiscoverWorkflowsWithConfig).toHaveBeenCalledTimes(2);
+  });
+});
+
+// ─── handleMessage — workflow context injection ───────────────────────────────
+
+describe('handleMessage — workflow context injection', () => {
+  beforeEach(() => {
+    mockGetRecentWorkflowResultMessages.mockClear();
+    mockGetOrCreateConversation.mockReset();
+    mockListCodebases.mockReset();
+    mockDiscoverWorkflowsWithConfig.mockReset();
+    mockLogger.warn.mockClear();
+
+    mockGetOrCreateConversation.mockImplementation(() => Promise.resolve(makeConversation()));
+    mockListCodebases.mockImplementation(() => Promise.resolve([]));
+    mockDiscoverWorkflowsWithConfig.mockImplementation(() =>
+      Promise.resolve({ workflows: [], errors: [] })
+    );
+    mockGetRecentWorkflowResultMessages.mockImplementation(() => Promise.resolve([]));
+  });
+
+  test('calls getRecentWorkflowResultMessages for the conversation', async () => {
+    const platform = makePlatform();
+    await handleMessage(platform, 'conv-1', 'What happened?');
+
+    expect(mockGetRecentWorkflowResultMessages).toHaveBeenCalledWith('conv-1', 3);
+  });
+
+  test('does not throw when getRecentWorkflowResultMessages returns empty array', async () => {
+    mockGetRecentWorkflowResultMessages.mockResolvedValueOnce([]);
+    const platform = makePlatform();
+
+    await expect(handleMessage(platform, 'conv-1', 'Hello')).resolves.toBeUndefined();
+  });
+
+  test('handles malformed metadata JSON without throwing', async () => {
+    const badRow = {
+      id: 'msg-1',
+      conversation_id: 'conv-1',
+      role: 'assistant' as const,
+      content: 'Summary.',
+      metadata: 'not-valid-json',
+      created_at: '2026-01-01T00:00:00Z',
+    };
+    mockGetRecentWorkflowResultMessages.mockResolvedValueOnce([badRow]);
+    const platform = makePlatform();
+
+    await expect(
+      handleMessage(platform, 'conv-1', 'What did the workflow do?')
+    ).resolves.toBeUndefined();
+  });
+
+  test('handles metadata with missing workflowResult key gracefully', async () => {
+    const rowNoWorkflowResult = {
+      id: 'msg-2',
+      conversation_id: 'conv-1',
+      role: 'assistant' as const,
+      content: 'Summary.',
+      metadata: '{"someOtherKey":"value"}',
+      created_at: '2026-01-01T00:00:00Z',
+    };
+    mockGetRecentWorkflowResultMessages.mockResolvedValueOnce([rowNoWorkflowResult]);
+    const platform = makePlatform();
+
+    await expect(handleMessage(platform, 'conv-1', 'Follow-up')).resolves.toBeUndefined();
+  });
+
+  test('continues without workflow context when outer fetch throws', async () => {
+    mockGetRecentWorkflowResultMessages.mockRejectedValueOnce(new Error('unexpected'));
+    const platform = makePlatform();
+
+    // Non-critical path — must not block message handling
+    await expect(handleMessage(platform, 'conv-1', 'Hello')).resolves.toBeUndefined();
+  });
+});
+
+// ─── Stale session ID clearing on error_during_execution ────────────────────
+
+describe('stale session ID clearing on error_during_execution', () => {
+  beforeEach(() => {
+    mockUpdateSession.mockClear();
+    mockTransitionSession.mockClear();
+    mockGetOrCreateConversation.mockReset();
+    mockGetCodebase.mockReset();
+    mockSendQuery.mockReset();
+    mockLogger.warn.mockClear();
+    mockGetRecentWorkflowResultMessages.mockReset();
+    mockGetRecentWorkflowResultMessages.mockImplementation(() => Promise.resolve([]));
+    mockDiscoverWorkflowsWithConfig.mockReset();
+    mockDiscoverWorkflowsWithConfig.mockImplementation(() =>
+      Promise.resolve({ workflows: [], errors: [] })
+    );
+    mockGetOrCreateConversation.mockImplementation(() => Promise.resolve(makeConversation()));
+    mockGetCodebase.mockImplementation(() => Promise.resolve(null));
+    mockListCodebases.mockReset();
+    mockListCodebases.mockImplementation(() => Promise.resolve([]));
+  });
+
+  test('handleStreamMode: clears session ID on error_during_execution result', async () => {
+    // Simulate AI returning error_during_execution with a stale session ID
+    mockSendQuery.mockImplementationOnce(async function* () {
+      yield {
+        type: 'result',
+        isError: true,
+        errorSubtype: 'error_during_execution',
+        sessionId: 'stale-session-id',
+      };
+    });
+    // transitionSession returns a session with an existing assistant_session_id
+    mockTransitionSession.mockResolvedValueOnce({
+      id: 'session-1',
+      assistant_session_id: 'stale-session-id',
+    });
+
+    const platform = makePlatform();
+    // Use streaming mode
+    (platform.getStreamingMode as ReturnType<typeof mock>).mockReturnValue('stream');
+    await handleMessage(platform, 'conv-1', 'hello');
+
+    // updateSession should be called with null to clear the stale session ID
+    expect(mockUpdateSession).toHaveBeenCalledWith('session-1', null);
+  });
+
+  test('handleBatchMode: clears session ID on error_during_execution result', async () => {
+    mockSendQuery.mockImplementationOnce(async function* () {
+      yield {
+        type: 'result',
+        isError: true,
+        errorSubtype: 'error_during_execution',
+        sessionId: 'stale-session-id',
+      };
+    });
+    mockTransitionSession.mockResolvedValueOnce({
+      id: 'session-1',
+      assistant_session_id: 'stale-session-id',
+    });
+
+    const platform = makePlatform();
+    // batch is the default from makePlatform, but be explicit
+    (platform.getStreamingMode as ReturnType<typeof mock>).mockReturnValue('batch');
+    await handleMessage(platform, 'conv-1', 'hello');
+
+    expect(mockUpdateSession).toHaveBeenCalledWith('session-1', null);
   });
 });

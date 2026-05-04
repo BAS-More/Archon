@@ -1,8 +1,8 @@
 /**
- * Telegram platform adapter using Telegraf SDK
+ * Telegram platform adapter using grammY SDK
  * Handles message sending with 4096 character limit splitting
  */
-import { Telegraf, Context } from 'telegraf';
+import { Bot, Context } from 'grammy';
 import type { IPlatformAdapter, MessageMetadata } from '@archon/core';
 import { createLogger } from '@archon/paths';
 import { parseAllowedUserIds, isUserAuthorized } from './auth';
@@ -20,17 +20,14 @@ function getLog(): ReturnType<typeof createLogger> {
 const MAX_LENGTH = 4096;
 
 export class TelegramAdapter implements IPlatformAdapter {
-  private bot: Telegraf;
+  private bot: Bot;
   private streamingMode: 'stream' | 'batch';
   private allowedUserIds: number[];
   private messageHandler: ((ctx: TelegramMessageContext) => Promise<void>) | null = null;
 
   constructor(token: string, mode: 'stream' | 'batch' = 'stream') {
-    // Disable handler timeout to support long-running AI operations
-    // Default is 90 seconds which is too short for complex coding tasks
-    this.bot = new Telegraf(token, {
-      handlerTimeout: Infinity,
-    });
+    // grammY does not impose a handler timeout by default (unlike Telegraf's 90s limit)
+    this.bot = new Bot(token);
     this.streamingMode = mode;
 
     // Parse Telegram user whitelist (optional - empty = open access)
@@ -106,9 +103,9 @@ export class TelegramAdapter implements IPlatformAdapter {
         if (subChunk.length + line.length + 1 > MAX_LENGTH - 100) {
           if (subChunk) {
             if (threadExtra) {
-              await this.bot.telegram.sendMessage(id, subChunk, threadExtra);
+              await this.bot.api.sendMessage(id, subChunk, threadExtra);
             } else {
-              await this.bot.telegram.sendMessage(id, subChunk);
+              await this.bot.api.sendMessage(id, subChunk);
             }
           }
           subChunk = line;
@@ -118,9 +115,9 @@ export class TelegramAdapter implements IPlatformAdapter {
       }
       if (subChunk) {
         if (threadExtra) {
-          await this.bot.telegram.sendMessage(id, subChunk, threadExtra);
+          await this.bot.api.sendMessage(id, subChunk, threadExtra);
         } else {
-          await this.bot.telegram.sendMessage(id, subChunk);
+          await this.bot.api.sendMessage(id, subChunk);
         }
       }
       return;
@@ -132,7 +129,7 @@ export class TelegramAdapter implements IPlatformAdapter {
       ? { parse_mode: 'MarkdownV2' as const, ...threadExtra }
       : { parse_mode: 'MarkdownV2' as const };
     try {
-      await this.bot.telegram.sendMessage(id, formatted, markdownOptions);
+      await this.bot.api.sendMessage(id, formatted, markdownOptions);
       getLog().debug({ chunkLength: chunk.length, threadId }, 'telegram.markdownv2_chunk_sent');
     } catch (error) {
       const err = error as Error;
@@ -145,17 +142,17 @@ export class TelegramAdapter implements IPlatformAdapter {
         'telegram.markdownv2_failed'
       );
       if (threadExtra) {
-        await this.bot.telegram.sendMessage(id, stripMarkdown(chunk), threadExtra);
+        await this.bot.api.sendMessage(id, stripMarkdown(chunk), threadExtra);
       } else {
-        await this.bot.telegram.sendMessage(id, stripMarkdown(chunk));
+        await this.bot.api.sendMessage(id, stripMarkdown(chunk));
       }
     }
   }
 
   /**
-   * Get the Telegraf bot instance
+   * Get the grammY bot instance
    */
-  getBot(): Telegraf {
+  getBot(): Bot {
     return this.bot;
   }
 
@@ -217,17 +214,15 @@ export class TelegramAdapter implements IPlatformAdapter {
    */
   async start(options?: { retryDelayMs?: number }): Promise<void> {
     // Register message handler before launch
-    this.bot.on('message', ctx => {
-      if (!('text' in ctx.message)) return;
-
+    this.bot.on('message:text', ctx => {
       const message = ctx.message.text;
       if (!message) return;
 
       // Authorization check - verify sender is in whitelist
-      const userId = ctx.from.id;
+      const userId = ctx.from?.id;
       if (!isUserAuthorized(userId, this.allowedUserIds)) {
         // Log unauthorized attempt (mask user ID for privacy)
-        const maskedId = `${String(userId).slice(0, 4)}***`;
+        const maskedId = userId !== undefined ? `${String(userId).slice(0, 4)}***` : 'unknown';
         getLog().info({ maskedUserId: maskedId }, 'telegram.unauthorized_message');
         return; // Silent rejection
       }
@@ -246,6 +241,11 @@ export class TelegramAdapter implements IPlatformAdapter {
         );
         // Fire-and-forget - errors handled by caller
         void this.messageHandler({ conversationId, message, userId });
+      } else {
+        // Intentional: message dropped silently if handler not registered yet.
+        // In production the server always calls onMessage() before start(); this
+        // path only surfaces during development or misconfiguration.
+        getLog().debug({ chatId: ctx.chat?.id }, 'telegram.message_dropped_no_handler');
       }
     });
 
@@ -256,9 +256,26 @@ export class TelegramAdapter implements IPlatformAdapter {
     const RETRY_DELAY_MS = options?.retryDelayMs ?? 60_000;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        // dropPendingUpdates: true — discard queued messages from while the bot was offline
+        // drop_pending_updates: true — discard queued messages from while the bot was offline
         // to avoid reprocessing stale commands after a container restart.
-        await this.bot.launch({ dropPendingUpdates: true });
+        // grammY's start() resolves only when the bot stops; use onStart callback to detect
+        // successful launch and return immediately while the bot continues running in background.
+        await new Promise<void>((resolve, reject) => {
+          this.bot
+            .start({
+              drop_pending_updates: true,
+              onStart: () => {
+                resolve();
+              },
+            })
+            .catch((err: unknown) => {
+              const error = err instanceof Error ? err : new Error(String(err));
+              // Log post-startup crashes — after onStart fires the reject() below is a no-op
+              // (Promise already settled), but the error should still be observable in logs.
+              getLog().error({ err: error }, 'telegram.bot_runtime_error');
+              reject(error);
+            });
+        });
         getLog().info('telegram.bot_started');
         return;
       } catch (err) {

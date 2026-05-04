@@ -28,7 +28,7 @@ import { formatToolCall } from '@archon/workflows/utils/tool-formatter';
 import { classifyAndFormatError } from '../utils/error-formatter';
 import { toError } from '../utils/error';
 import { getAgentProvider, getProviderCapabilities } from '@archon/providers';
-import { getArchonHome, getArchonWorkspacesPath } from '@archon/paths';
+import { getArchonWorkspacesPath } from '@archon/paths';
 import { syncArchonToWorktree } from '../utils/worktree-sync';
 import { syncWorkspace, toRepoPath } from '@archon/git';
 import type { WorkspaceSyncResult } from '@archon/git';
@@ -46,7 +46,13 @@ import type { MergedConfig } from '../config/config-types';
 import { generateAndSetTitle } from '../services/title-generator';
 import { validateAndResolveIsolation, dispatchBackgroundWorkflow } from './orchestrator';
 import { IsolationBlockedError } from '@archon/isolation';
-import { buildOrchestratorPrompt, buildProjectScopedPrompt } from './prompt-builder';
+import {
+  buildOrchestratorPrompt,
+  buildProjectScopedPrompt,
+  formatWorkflowContextSection,
+} from './prompt-builder';
+import type { WorkflowResultContext } from './prompt-builder';
+import * as messageDb from '../db/messages';
 import * as workflowDb from '../db/workflows';
 import * as workflowEventDb from '../db/workflow-events';
 import { getCodebaseEnvVars } from '../db/env-vars';
@@ -230,31 +236,43 @@ async function dispatchOrchestratorWorkflow(
     codebase_id: codebase.id,
   });
 
-  // Validate and resolve isolation
+  // Validate and resolve isolation.
+  // A workflow with `worktree.enabled: false` short-circuits the resolver entirely
+  // and runs in the live checkout — no worktree creation, no env row. This is the
+  // declarative equivalent of CLI `--no-worktree` for workflows that should always
+  // run live (e.g. read-only triage, docs generation on the main checkout).
   let cwd: string;
-  try {
-    const result = await validateAndResolveIsolation(
-      { ...conversation, codebase_id: codebase.id },
-      codebase,
-      platform,
-      conversationId,
-      isolationHints
+  if (workflow.worktree?.enabled === false) {
+    getLog().info(
+      { workflowName: workflow.name, conversationId, codebaseId: codebase.id },
+      'workflow.worktree_disabled_by_policy'
     );
-    cwd = result.cwd;
-  } catch (error) {
-    if (error instanceof IsolationBlockedError) {
-      getLog().warn(
-        {
-          reason: error.reason,
-          conversationId,
-          codebaseId: codebase.id,
-          workflowName: workflow.name,
-        },
-        'isolation_blocked'
+    cwd = codebase.default_cwd;
+  } else {
+    try {
+      const result = await validateAndResolveIsolation(
+        { ...conversation, codebase_id: codebase.id },
+        codebase,
+        platform,
+        conversationId,
+        isolationHints
       );
-      return;
+      cwd = result.cwd;
+    } catch (error) {
+      if (error instanceof IsolationBlockedError) {
+        getLog().warn(
+          {
+            reason: error.reason,
+            conversationId,
+            codebaseId: codebase.id,
+            workflowName: workflow.name,
+          },
+          'isolation_blocked'
+        );
+        return;
+      }
+      throw error;
     }
-    throw error;
   }
 
   // Dispatch workflow
@@ -283,7 +301,10 @@ async function dispatchOrchestratorWorkflow(
         workflow,
         userMessage,
         conversation.id,
-        codebase.id
+        codebase.id,
+        undefined, // issueContext
+        undefined, // isolationContext
+        conversation.id // parentConversationId — enables approve/reject auto-resume
       );
     } else if (workflow.interactive) {
       // Interactive workflows run in foreground so output stays in the user's conversation
@@ -295,7 +316,10 @@ async function dispatchOrchestratorWorkflow(
         workflow,
         userMessage,
         conversation.id,
-        codebase.id
+        codebase.id,
+        undefined, // issueContext
+        undefined, // isolationContext
+        conversation.id // parentConversationId — enables approve/reject auto-resume
       );
     } else {
       await dispatchBackgroundWorkflow(
@@ -321,19 +345,25 @@ async function dispatchOrchestratorWorkflow(
       workflow,
       userMessage,
       conversation.id,
-      codebase.id
+      codebase.id,
+      undefined, // issueContext
+      undefined, // isolationContext
+      conversation.id // parentConversationId — enables approve/reject auto-resume
     );
   }
 }
 
 // ─── Session Helpers ────────────────────────────────────────────────────────
 
-async function tryPersistSessionId(sessionId: string, assistantSessionId: string): Promise<void> {
+async function tryPersistSessionId(
+  sessionId: string,
+  assistantSessionId: string | null
+): Promise<void> {
   try {
     await sessionDb.updateSession(sessionId, assistantSessionId);
   } catch (error) {
     getLog().error(
-      { err: error as Error, sessionId, newSessionId: assistantSessionId },
+      { err: error as Error, sessionId, persistedValue: assistantSessionId },
       'session_id_persist_failed'
     );
   }
@@ -390,9 +420,9 @@ async function discoverAllWorkflows(conversation: Conversation): Promise<Discove
   let config: MergedConfig | undefined;
 
   try {
-    const result = await discoverWorkflowsWithConfig(getArchonWorkspacesPath(), loadConfig, {
-      globalSearchPath: getArchonHome(),
-    });
+    // Home-scoped workflows at ~/.archon/workflows/ are discovered automatically
+    // by discoverWorkflowsWithConfig — no option needed.
+    const result = await discoverWorkflowsWithConfig(getArchonWorkspacesPath(), loadConfig);
     workflows = [...result.workflows];
     allErrors.push(...result.errors);
   } catch (error) {
@@ -460,7 +490,8 @@ async function buildFullPrompt(
   message: string,
   issueContext: string | undefined,
   threadContext: string | undefined,
-  attachedFiles?: AttachedFile[]
+  attachedFiles?: AttachedFile[],
+  workflowContext?: string
 ): Promise<string> {
   const scopedCodebase = conversation.codebase_id
     ? codebases.find(c => c.id === conversation.codebase_id)
@@ -494,12 +525,15 @@ async function buildFullPrompt(
           .join('\n')
       : '';
 
+  const workflowContextSuffix = workflowContext ? '\n\n---\n\n' + workflowContext : '';
+
   if (threadContext) {
     return (
       systemPrompt +
       memorySuffix +
       '\n\n---\n\n## Thread Context (previous messages)\n\n' +
       threadContext +
+      workflowContextSuffix +
       '\n\n---\n\n## Current Request\n\n' +
       message +
       contextSuffix +
@@ -510,6 +544,7 @@ async function buildFullPrompt(
   return (
     systemPrompt +
     memorySuffix +
+    workflowContextSuffix +
     '\n\n---\n\n## User Message\n\n' +
     message +
     contextSuffix +
@@ -791,6 +826,44 @@ export async function handleMessage(
       });
     }
 
+    // Build workflow context for follow-up awareness
+    let workflowContext: string | undefined;
+    try {
+      const recentResultMessages = await messageDb.getRecentWorkflowResultMessages(
+        conversation.id,
+        3
+      );
+      if (recentResultMessages.length > 0) {
+        const workflowResults: WorkflowResultContext[] = recentResultMessages.map(msg => {
+          let workflowName = 'unknown';
+          let runId = 'unknown';
+          try {
+            const parsed =
+              typeof msg.metadata === 'string' ? JSON.parse(msg.metadata) : msg.metadata;
+            const meta = parsed as {
+              workflowResult?: { workflowName?: string; runId?: string };
+            };
+            workflowName = meta.workflowResult?.workflowName ?? 'unknown';
+            runId = meta.workflowResult?.runId ?? 'unknown';
+          } catch (metaErr) {
+            // Malformed metadata — use defaults
+            getLog().warn(
+              { err: metaErr as Error, conversationId, messageId: msg.id },
+              'orchestrator.workflow_result_metadata_parse_failed'
+            );
+          }
+          return { workflowName, runId, summary: msg.content };
+        });
+        workflowContext = formatWorkflowContextSection(workflowResults);
+      }
+    } catch (error) {
+      getLog().warn(
+        { err: error as Error, conversationId },
+        'orchestrator.workflow_context_fetch_failed'
+      );
+      // Non-critical — continue without context
+    }
+
     const fullPrompt = await buildFullPrompt(
       conversation,
       codebases,
@@ -798,7 +871,8 @@ export async function handleMessage(
       message,
       issueContext,
       threadContext,
-      attachedFiles
+      attachedFiles,
+      workflowContext
     );
     const cwd = getArchonWorkspacesPath();
 
@@ -1003,8 +1077,40 @@ async function handleStreamMode(
       if (!commandDetected && platform.sendStructuredEvent) {
         await platform.sendStructuredEvent(conversationId, msg);
       }
-    } else if (msg.type === 'result' && msg.sessionId) {
-      newSessionId = msg.sessionId;
+    } else if (msg.type === 'result') {
+      if (msg.isError && msg.errorSubtype === 'error_during_execution') {
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            staleSessionId: msg.sessionId,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'clearing_stale_session_id'
+        );
+        await tryPersistSessionId(session.id, null);
+        newSessionId = undefined;
+      } else if (msg.sessionId) {
+        newSessionId = msg.sessionId;
+      }
+      if (msg.isError) {
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'ai_result_error'
+        );
+        const syntheticError = new Error(msg.errorSubtype ?? 'AI result error');
+        await platform.sendMessage(conversationId, classifyAndFormatError(syntheticError));
+        if (newSessionId) {
+          await tryPersistSessionId(session.id, newSessionId);
+        }
+        return;
+      }
       if (!commandDetected && platform.sendStructuredEvent) {
         await platform.sendStructuredEvent(conversationId, msg);
       }
@@ -1119,8 +1225,40 @@ async function handleBatchMode(
         allChunks.push({ type: 'tool', content: toolMessage });
         getLog().debug({ toolName: msg.toolName }, 'tool_call');
       }
-    } else if (msg.type === 'result' && msg.sessionId) {
-      newSessionId = msg.sessionId;
+    } else if (msg.type === 'result') {
+      if (msg.isError && msg.errorSubtype === 'error_during_execution') {
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            staleSessionId: msg.sessionId,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'clearing_stale_session_id'
+        );
+        await tryPersistSessionId(session.id, null);
+        newSessionId = undefined;
+      } else if (msg.sessionId) {
+        newSessionId = msg.sessionId;
+      }
+      if (msg.isError) {
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'ai_result_error'
+        );
+        const syntheticError = new Error(msg.errorSubtype ?? 'AI result error');
+        await platform.sendMessage(conversationId, classifyAndFormatError(syntheticError));
+        if (newSessionId) {
+          await tryPersistSessionId(session.id, newSessionId);
+        }
+        return;
+      }
     }
 
     if (!commandDetected && allChunks.length > MAX_BATCH_TOTAL_CHUNKS) {

@@ -11,6 +11,7 @@ import {
   listCodebases,
   listProviders,
   addCodebase,
+  getCodebaseInput,
   deleteCodebase,
   updateAssistantConfig,
   getCodebaseEnvVars,
@@ -22,7 +23,6 @@ import type {
   CodebaseResponse,
   ProviderDefaults,
   ProviderInfo,
-  HealthResponse,
 } from '@/lib/api';
 
 const selectClass =
@@ -259,7 +259,7 @@ function EnvVarsPanel({ codebaseId }: { codebaseId: string }): React.ReactElemen
 
 function ProjectsSection(): React.ReactElement {
   const queryClient = useQueryClient();
-  const [addPath, setAddPath] = useState('');
+  const [addValue, setAddValue] = useState('');
   const [showAdd, setShowAdd] = useState(false);
   const [expandedEnvVars, setExpandedEnvVars] = useState<string | null>(null);
 
@@ -269,10 +269,10 @@ function ProjectsSection(): React.ReactElement {
   });
 
   const addMutation = useMutation({
-    mutationFn: ({ path }: { path: string }) => addCodebase({ path }),
+    mutationFn: (value: string) => addCodebase(getCodebaseInput(value)),
     onSuccess: () => {
       void queryClient.invalidateQueries({ queryKey: ['codebases'] });
-      setAddPath('');
+      setAddValue('');
       setShowAdd(false);
     },
   });
@@ -286,8 +286,8 @@ function ProjectsSection(): React.ReactElement {
 
   function handleAddSubmit(e: React.FormEvent): void {
     e.preventDefault();
-    if (addPath.trim()) {
-      addMutation.mutate({ path: addPath.trim() });
+    if (addValue.trim()) {
+      addMutation.mutate(addValue.trim());
     }
   }
 
@@ -340,11 +340,11 @@ function ProjectsSection(): React.ReactElement {
         {showAdd ? (
           <form onSubmit={handleAddSubmit} className="mt-3 flex gap-2">
             <Input
-              value={addPath}
+              value={addValue}
               onChange={e => {
-                setAddPath(e.target.value);
+                setAddValue(e.target.value);
               }}
-              placeholder="/path/to/repository"
+              placeholder="GitHub URL or local path"
               className="flex-1"
             />
             <Button type="submit" size="sm" disabled={addMutation.isPending}>
@@ -356,7 +356,7 @@ function ProjectsSection(): React.ReactElement {
               size="sm"
               onClick={() => {
                 setShowAdd(false);
-                setAddPath('');
+                setAddValue('');
               }}
             >
               Cancel
@@ -607,18 +607,19 @@ function AssistantConfigSection({ config }: { config: SafeConfigResponse }): Rea
 }
 
 function PlatformConnectionsSection({
-  adapter,
-  adapters,
+  activePlatforms,
 }: {
-  adapter: string | undefined;
-  adapters: HealthResponse['adapters'] | undefined;
+  activePlatforms: string[] | undefined;
 }): React.ReactElement {
+  const active = new Set(activePlatforms ?? []);
   const platforms = [
-    { name: 'Web', connected: adapter === 'web' },
-    { name: 'Slack', connected: adapters?.slack ?? false },
-    { name: 'Telegram', connected: adapters?.telegram ?? false },
-    { name: 'Discord', connected: adapters?.discord ?? false },
-    { name: 'GitHub', connected: adapters?.github ?? false },
+    { name: 'Web', connected: active.has('Web') },
+    { name: 'Slack', connected: active.has('Slack') },
+    { name: 'Telegram', connected: active.has('Telegram') },
+    { name: 'Discord', connected: active.has('Discord') },
+    { name: 'GitHub', connected: active.has('GitHub') },
+    { name: 'Gitea', connected: active.has('Gitea') },
+    { name: 'GitLab', connected: active.has('GitLab') },
   ];
 
   return (
@@ -719,7 +720,7 @@ export function SettingsPage(): React.ReactElement {
 
           <div className="grid grid-cols-1 gap-6 lg:grid-cols-2">
             {configData && <AssistantConfigSection config={configData.config} />}
-            <PlatformConnectionsSection adapter={health?.adapter} adapters={health?.adapters} />
+            <PlatformConnectionsSection activePlatforms={health?.activePlatforms} />
           </div>
 
           <ProjectsSection />
