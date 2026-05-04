@@ -32,9 +32,7 @@ export async function copyArchonSkill(targetPath: string): Promise<void> {
   for (const [relativePath, content] of Object.entries(BUNDLED_SKILL_FILES)) {
     const dest = join(skillRoot, relativePath);
     const destDir = dirname(dest);
-    if (!existsSync(destDir)) {
-      mkdirSync(destDir, { recursive: true });
-    }
+    mkdirSync(destDir, { recursive: true });
     writeFileSync(dest, content);
   }
 }
