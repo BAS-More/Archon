@@ -69,6 +69,14 @@ mock.module('./event-emitter', () => ({
 }));
 
 // ---------------------------------------------------------------------------
+// Bootstrap provider registry (executor calls isRegisteredProvider at workflow level)
+// ---------------------------------------------------------------------------
+
+import { registerBuiltinProviders, clearRegistry } from '@archon/providers';
+clearRegistry();
+registerBuiltinProviders();
+
+// ---------------------------------------------------------------------------
 // Import after mocks
 // ---------------------------------------------------------------------------
 
@@ -328,7 +336,13 @@ describe('executeWorkflow preamble', () => {
         '/tmp',
         makeWorkflow(),
         'User message',
-        'db-conv-id'
+        'db-conv-id',
+        undefined, // codebaseId
+        undefined, // issueContext
+        undefined, // isolationContext
+        undefined, // parentConversationId
+        undefined, // preCreatedRun
+        true // allowAutoResume
       );
 
       // No createWorkflowRun — resume used existing run
@@ -368,7 +382,13 @@ describe('executeWorkflow preamble', () => {
         '/tmp',
         makeWorkflow(),
         'User message',
-        'db-conv-id'
+        'db-conv-id',
+        undefined, // codebaseId
+        undefined, // issueContext
+        undefined, // isolationContext
+        undefined, // parentConversationId
+        undefined, // preCreatedRun
+        true // allowAutoResume
       );
 
       // No createWorkflowRun — resume used existing run
@@ -407,7 +427,13 @@ describe('executeWorkflow preamble', () => {
         '/tmp',
         makeWorkflow(),
         'User message',
-        'db-conv-id'
+        'db-conv-id',
+        undefined, // codebaseId
+        undefined, // issueContext
+        undefined, // isolationContext
+        undefined, // parentConversationId
+        undefined, // preCreatedRun
+        true // allowAutoResume
       );
 
       expect(result.success).toBe(false);

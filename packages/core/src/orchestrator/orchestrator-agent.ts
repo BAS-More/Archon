@@ -296,7 +296,9 @@ async function dispatchOrchestratorWorkflow(
         codebase.id,
         undefined, // issueContext
         undefined, // isolationContext
-        conversation.id // parentConversationId — enables approve/reject auto-resume
+        conversation.id, // parentConversationId — enables approve/reject auto-resume
+        undefined, // preCreatedRun
+        true // allowAutoResume — caller confirmed a resumable run exists at working_path
       );
     } else if (workflow.interactive) {
       // Interactive workflows run in foreground so output stays in the user's conversation
@@ -347,12 +349,15 @@ async function dispatchOrchestratorWorkflow(
 
 // ─── Session Helpers ────────────────────────────────────────────────────────
 
-async function tryPersistSessionId(sessionId: string, assistantSessionId: string): Promise<void> {
+async function tryPersistSessionId(
+  sessionId: string,
+  assistantSessionId: string | null
+): Promise<void> {
   try {
     await sessionDb.updateSession(sessionId, assistantSessionId);
   } catch (error) {
     getLog().error(
-      { err: error as Error, sessionId, newSessionId: assistantSessionId },
+      { err: error as Error, sessionId, persistedValue: assistantSessionId },
       'session_id_persist_failed'
     );
   }
@@ -818,7 +823,22 @@ export async function handleMessage(
       attachedFiles,
       workflowContext
     );
-    const cwd = getArchonWorkspacesPath();
+    // For codebase-scoped chat, use the worktree path (conversation.cwd) if set,
+    // otherwise the codebase's default working directory.
+    // Non-scoped chat falls back to the Archon workspaces root.
+    let cwd = getArchonWorkspacesPath();
+    if (conversation.codebase_id) {
+      const attachedCodebase = codebases.find(c => c.id === conversation.codebase_id);
+      if (attachedCodebase) {
+        cwd = conversation.cwd ?? attachedCodebase.default_cwd;
+      } else {
+        // Intentional fallback: codebase may have been deleted; run with workspaces root.
+        getLog().warn(
+          { codebaseId: conversation.codebase_id, conversationId },
+          'orchestrator.codebase_not_found_cwd_fallback'
+        );
+      }
+    }
 
     // 4. Update activity and get/create session
     await db.touchConversation(conversation.id);
@@ -976,11 +996,32 @@ async function handleStreamMode(
         await platform.sendStructuredEvent(conversationId, msg);
       }
     } else if (msg.type === 'result') {
-      if (msg.sessionId) {
+      if (msg.isError && msg.errorSubtype === 'error_during_execution') {
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            staleSessionId: msg.sessionId,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'clearing_stale_session_id'
+        );
+        await tryPersistSessionId(session.id, null);
+        newSessionId = undefined;
+      } else if (msg.sessionId) {
         newSessionId = msg.sessionId;
       }
       if (msg.isError) {
-        getLog().warn({ conversationId, errorSubtype: msg.errorSubtype }, 'ai_result_error');
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'ai_result_error'
+        );
         const syntheticError = new Error(msg.errorSubtype ?? 'AI result error');
         await platform.sendMessage(conversationId, classifyAndFormatError(syntheticError));
         if (newSessionId) {
@@ -1099,11 +1140,32 @@ async function handleBatchMode(
         getLog().debug({ toolName: msg.toolName }, 'tool_call');
       }
     } else if (msg.type === 'result') {
-      if (msg.sessionId) {
+      if (msg.isError && msg.errorSubtype === 'error_during_execution') {
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            staleSessionId: msg.sessionId,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'clearing_stale_session_id'
+        );
+        await tryPersistSessionId(session.id, null);
+        newSessionId = undefined;
+      } else if (msg.sessionId) {
         newSessionId = msg.sessionId;
       }
       if (msg.isError) {
-        getLog().warn({ conversationId, errorSubtype: msg.errorSubtype }, 'ai_result_error');
+        getLog().warn(
+          {
+            conversationId,
+            errorSubtype: msg.errorSubtype,
+            errors: msg.errors,
+            stopReason: msg.stopReason,
+          },
+          'ai_result_error'
+        );
         const syntheticError = new Error(msg.errorSubtype ?? 'AI result error');
         await platform.sendMessage(conversationId, classifyAndFormatError(syntheticError));
         if (newSessionId) {
