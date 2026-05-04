@@ -253,6 +253,10 @@ bun run cli serve
 bun run cli serve --port 4000
 bun run cli serve --download-only  # Download without starting
 
+# Install the bundled Archon skill into a project
+bun run cli skill install
+bun run cli skill install /path/to/project
+
 # Show version
 bun run cli version
 ```
@@ -475,9 +479,9 @@ The system supports configuring default models and options per assistant in `.ar
 assistants:
   claude:
     model: sonnet  # or 'opus', 'haiku', 'claude-*', 'inherit'
-    settingSources:  # Controls which CLAUDE.md files Claude SDK loads
-      - project      # Default: only project-level CLAUDE.md
-      - user         # Optional: also load ~/.claude/CLAUDE.md
+    settingSources:  # Controls which CLAUDE.md, skills, commands, and agents the SDK loads
+      - project      # Project-level <cwd>/.claude/ (included in default)
+      - user         # User-level ~/.claude/ (included in default; omit both to restrict to project-only)
     claudeBinaryPath: /absolute/path/to/claude  # Optional: Claude Code executable.
                                                 # Native binary (curl installer at
                                                 # ~/.local/bin/claude) or npm cli.js.
