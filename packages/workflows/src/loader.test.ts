@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, spyOn, mock, type Mock } from 'bun:test';
-import { mkdtemp, mkdir, writeFile, rm } from 'fs/promises';
+import { mkdir, writeFile, rm, mkdtemp } from 'fs/promises';
 import { join } from 'path';
 import { tmpdir } from 'os';
 
@@ -41,9 +41,8 @@ describe('Workflow Loader', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    // Create unique temp directory for each test (securely)
+    // Create unique temp directory for each test securely
     testDir = await mkdtemp(join(tmpdir(), 'workflow-test-'));
-  });
 
   afterEach(async () => {
     // Clean up temp directory
