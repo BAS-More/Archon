@@ -7,6 +7,8 @@
  * - Does NOT require a project to be selected before starting a conversation
  */
 import { existsSync } from 'fs';
+import { writeFile, readFile, mkdir } from 'fs/promises';
+import { join } from 'path';
 import { createLogger } from '@archon/paths';
 import type {
   IPlatformAdapter,
@@ -21,6 +23,7 @@ import * as db from '../db/conversations';
 import * as codebaseDb from '../db/codebases';
 import * as sessionDb from '../db/sessions';
 import * as commandHandler from '../handlers/command-handler';
+import * as messageDb from '../db/messages';
 import { formatToolCall } from '@archon/workflows/utils/tool-formatter';
 import { classifyAndFormatError } from '../utils/error-formatter';
 import { toError } from '../utils/error';
@@ -49,7 +52,6 @@ import {
   formatWorkflowContextSection,
 } from './prompt-builder';
 import type { WorkflowResultContext } from './prompt-builder';
-import * as messageDb from '../db/messages';
 import * as workflowDb from '../db/workflows';
 import * as workflowEventDb from '../db/workflow-events';
 import { getCodebaseEnvVars } from '../db/env-vars';
@@ -86,6 +88,11 @@ export interface ProjectRegistration {
 export interface OrchestratorCommands {
   workflowInvocation: WorkflowInvocation | null;
   projectRegistration: ProjectRegistration | null;
+}
+
+/** Internal extension of HandleMessageContext that carries recursion depth for auto-compact retry. */
+interface InternalHandleMessageContext extends HandleMessageContext {
+  readonly _retryDepth?: number;
 }
 
 // ─── Command Parsing ────────────────────────────────────────────────────────
@@ -477,7 +484,7 @@ async function discoverAllWorkflows(conversation: Conversation): Promise<Discove
 }
 
 /** Build the full prompt with system prompt, user message, and optional contexts */
-function buildFullPrompt(
+async function buildFullPrompt(
   conversation: Conversation,
   codebases: readonly Codebase[],
   workflows: readonly WorkflowDefinition[],
@@ -486,7 +493,7 @@ function buildFullPrompt(
   threadContext: string | undefined,
   attachedFiles?: AttachedFile[],
   workflowContext?: string
-): string {
+): Promise<string> {
   const scopedCodebase = conversation.codebase_id
     ? codebases.find(c => c.id === conversation.codebase_id)
     : undefined;
@@ -494,6 +501,20 @@ function buildFullPrompt(
   const systemPrompt = scopedCodebase
     ? buildProjectScopedPrompt(scopedCodebase, codebases, workflows)
     : buildOrchestratorPrompt(codebases, workflows);
+
+  // Load project memory (MEMORY.md) — shared with CLI Claude Code
+  let memoryContent: string | null = null;
+  if (conversation.cwd) {
+    memoryContent = await loadMemoryIndex(conversation.cwd);
+  }
+
+  const memorySuffix = memoryContent
+    ? '\n\n---\n\n## Project Memory\n\nLoaded from MEMORY.md (shared with CLI). Topic files can be read on demand via the Read tool at: `' +
+      computeMemoryPath(conversation.cwd ?? '') +
+      '/`\n' +
+      'For session history, check Obsidian vault at `Claude/Session-Logs/` via Obsidian MCP or filesystem.\n\n' +
+      memoryContent
+    : '';
 
   const contextSuffix = issueContext ? '\n\n---\n\n## Additional Context\n\n' + issueContext : '';
 
@@ -510,6 +531,7 @@ function buildFullPrompt(
   if (threadContext) {
     return (
       systemPrompt +
+      memorySuffix +
       '\n\n---\n\n## Thread Context (previous messages)\n\n' +
       threadContext +
       workflowContextSuffix +
@@ -522,6 +544,7 @@ function buildFullPrompt(
 
   return (
     systemPrompt +
+    memorySuffix +
     workflowContextSuffix +
     '\n\n---\n\n## User Message\n\n' +
     message +
@@ -546,11 +569,12 @@ export async function handleMessage(
 ): Promise<void> {
   const { issueContext, threadContext, parentConversationId, isolationHints, attachedFiles } =
     context ?? {};
+  let conversation: Conversation | undefined;
   try {
     getLog().debug({ conversationId }, 'orchestrator_message_received');
 
     // 1. Get/create conversation and inherit thread context
-    let conversation = await db.getOrCreateConversation(
+    conversation = await db.getOrCreateConversation(
       platform.getPlatformType(),
       conversationId,
       undefined,
@@ -699,6 +723,9 @@ export async function handleMessage(
         'register-project',
         'update-project',
         'remove-project',
+        'setproject',
+        'compact',
+        'resume',
         'commands',
         'init',
         'worktree',
@@ -723,6 +750,31 @@ export async function handleMessage(
           getLog().debug({ command, conversationId }, 'deterministic_command');
           const result = await handleRemoveProject(message);
           await platform.sendMessage(conversationId, result);
+          return;
+        }
+
+        if (command === 'setproject') {
+          getLog().debug({ command, conversationId }, 'deterministic_command');
+          const result = await handleSetProject(message, conversation.id);
+          await platform.sendMessage(conversationId, result);
+          return;
+        }
+
+        if (command === 'reset') {
+          getLog().debug({ command, conversationId }, 'deterministic_command');
+          await handleResetWithSessionLog(platform, conversationId, conversation);
+          return;
+        }
+
+        if (command === 'compact') {
+          getLog().debug({ command, conversationId }, 'deterministic_command');
+          await handleCompact(platform, conversationId, conversation);
+          return;
+        }
+
+        if (command === 'resume') {
+          getLog().debug({ command, conversationId }, 'deterministic_command');
+          await handleResume(platform, conversationId, conversation);
           return;
         }
 
@@ -813,7 +865,7 @@ export async function handleMessage(
       // Non-critical — continue without context
     }
 
-    const fullPrompt = buildFullPrompt(
+    const fullPrompt = await buildFullPrompt(
       conversation,
       codebases,
       workflows,
@@ -827,14 +879,15 @@ export async function handleMessage(
     // otherwise the codebase's default working directory.
     // Non-scoped chat falls back to the Archon workspaces root.
     let cwd = getArchonWorkspacesPath();
-    if (conversation.codebase_id) {
-      const attachedCodebase = codebases.find(c => c.id === conversation.codebase_id);
+    if (conversation?.codebase_id) {
+      const conv = conversation;
+      const attachedCodebase = codebases.find(c => c.id === conv.codebase_id);
       if (attachedCodebase) {
-        cwd = conversation.cwd ?? attachedCodebase.default_cwd;
+        cwd = conv.cwd ?? attachedCodebase.default_cwd;
       } else {
         // Intentional fallback: codebase may have been deleted; run with workspaces root.
         getLog().warn(
-          { codebaseId: conversation.codebase_id, conversationId },
+          { codebaseId: conv.codebase_id, conversationId },
           'orchestrator.codebase_not_found_cwd_fallback'
         );
       }
@@ -924,6 +977,52 @@ export async function handleMessage(
     getLog().debug({ conversationId }, 'orchestrator_message_completed');
   } catch (error) {
     const err = toError(error);
+
+    // Auto-compact on expired session: save summary from messages, reset, and retry
+    const isSessionExpired =
+      err.message.includes('No conversation found with session ID') ||
+      err.message.includes('not a valid UUID');
+    if (conversation && isSessionExpired) {
+      getLog().info({ conversationId }, 'session.expired_auto_compacting');
+      try {
+        // Save session log to Obsidian before resetting
+        await saveSessionToObsidian(conversation);
+
+        // Reset the expired session
+        const expiredSession = await sessionDb.getActiveSession(conversation.id);
+        if (expiredSession) {
+          await sessionDb.deactivateSession(expiredSession.id, 'reset-requested');
+        }
+
+        await platform.sendMessage(
+          conversationId,
+          'Session expired — context saved automatically. Retrying your message...'
+        );
+
+        // Retry once (guard against infinite recursion)
+        const retryDepth = (context as InternalHandleMessageContext | undefined)?._retryDepth ?? 0;
+        if (retryDepth > 0) {
+          getLog().error({ conversationId, retryDepth }, 'session.auto_compact_retry_limit');
+          await platform.sendMessage(
+            conversationId,
+            'Session expired and auto-recovery failed. Please use /reset to start a fresh session.'
+          );
+          return;
+        } else {
+          await handleMessage(platform, conversationId, message, {
+            ...context,
+            _retryDepth: retryDepth + 1,
+          } as InternalHandleMessageContext);
+          return;
+        }
+      } catch (compactError) {
+        getLog().error(
+          { err: toError(compactError), conversationId },
+          'session.auto_compact_failed'
+        );
+      }
+    }
+
     getLog().error({ err, conversationId }, 'orchestrator_message_failed');
     const userMessage = classifyAndFormatError(err);
     try {
@@ -1045,6 +1144,10 @@ async function handleStreamMode(
   }
 
   const fullResponse = allMessages.join('');
+
+  // Persist messages for all platforms (enables auto-compact, /compact, history)
+  await persistConversationMessages(conversation.id, originalMessage, fullResponse);
+
   const commands = parseOrchestratorCommands(fullResponse, codebases, workflows);
 
   if (commands.workflowInvocation) {
@@ -1209,6 +1312,9 @@ async function handleBatchMode(
     getLog().debug({ conversationId }, 'no_ai_response');
     return;
   }
+
+  // Persist messages for all platforms (enables auto-compact, /compact, history)
+  await persistConversationMessages(conversation.id, originalMessage, finalMessage);
 
   // Parse orchestrator commands from filtered response
   const commands = parseOrchestratorCommands(finalMessage, codebases, workflows);
@@ -1451,6 +1557,365 @@ async function handleRemoveProject(message: string): Promise<string> {
   await codebaseDb.deleteCodebase(codebase.id);
   getLog().info({ name: projectName, id: codebase.id }, 'project.remove_completed');
   return `Project "${projectName}" removed.\nPath was: ${codebase.default_cwd}`;
+}
+
+// ─── Shared Memory (Obsidian Session Logs) ─────────────────────────────────
+
+/** Obsidian vault path (iCloud). Both CLI (/compress) and Archon (/compact) use this. */
+const VAULT_SESSION_LOGS = join(
+  process.env.HOME ?? '',
+  'Library/Mobile Documents/iCloud~md~obsidian/Documents/Claude/Session-Logs'
+);
+
+/**
+ * Resolve the project folder name from a codebase (last segment of name).
+ * e.g., "CryptixSamurai/ai-ofm" → "ai-ofm"
+ */
+function getProjectSlug(codebase: Codebase): string {
+  const parts = codebase.name.split('/');
+  return parts[parts.length - 1];
+}
+
+/**
+ * Save a session summary to Obsidian vault as a session log.
+ * Mirrors /compress CLI format so both tools produce a unified timeline.
+ */
+async function saveSessionLogToVault(
+  projectSlug: string,
+  summary: string,
+  platform: string,
+  title?: string | null
+): Promise<string | null> {
+  try {
+    const dir = join(VAULT_SESSION_LOGS, projectSlug);
+    await mkdir(dir, { recursive: true });
+
+    const date = new Date().toISOString().slice(0, 10);
+    const slug = (title ?? 'compact-session')
+      .toLowerCase()
+      .replace(/[^a-z0-9а-яіїєґ]+/gu, '-')
+      .replace(/^-|-$/g, '')
+      .slice(0, 50);
+    const fileName = `${date}-${slug}.md`;
+
+    await writeFile(
+      join(dir, fileName),
+      `---\ntype: session-log\ndate: ${date}\nproject: ${projectSlug}\nsource: archon-compact\nplatform: ${platform}\nstatus: completed\ntags: [claude, session, ${projectSlug.toLowerCase()}, archon]\n---\n\n# ${projectSlug} — Compact Summary\n\n${summary}\n`,
+      'utf-8'
+    );
+    return `Claude/Session-Logs/${projectSlug}/${fileName}`;
+  } catch (error) {
+    getLog().warn({ err: error as Error, projectSlug }, 'session.vault_save_failed');
+    return null;
+  }
+}
+
+// ─── Project Memory (MEMORY.md — shared with CLI) ──────────────────────────
+
+/**
+ * Compute the path to Claude Code's per-project memory directory.
+ * CLI encodes the CWD by replacing '/' with '-' as the project folder name.
+ * Dots and spaces are preserved to match the Claude CLI exactly.
+ * Example: /Users/anton/Claude workspace/ai-ofm
+ *   → ~/.claude/projects/-Users-anton-Claude workspace-ai-ofm/memory/
+ */
+export function computeMemoryPath(cwd: string): string {
+  const encoded = cwd.replace(/\//g, '-');
+  const home = process.env.HOME ?? '';
+  return join(home, '.claude', 'projects', encoded, 'memory');
+}
+
+/**
+ * Load MEMORY.md index from the CLI memory directory for a project.
+ * Returns the file content (typically 10-50 lines) or null if not found.
+ * This is the same file Claude Code CLI auto-loads — sharing it gives
+ * Archon agents identical project knowledge.
+ */
+export async function loadMemoryIndex(cwd: string): Promise<string | null> {
+  try {
+    const memoryDir = computeMemoryPath(cwd);
+    const indexPath = join(memoryDir, 'MEMORY.md');
+    if (!existsSync(indexPath)) return null;
+
+    const content = await readFile(indexPath, 'utf-8');
+    if (!content.trim()) return null;
+
+    getLog().debug({ cwd, memoryDir }, 'memory.index_loaded');
+    return content.trim();
+  } catch (error) {
+    getLog().warn({ err: error as Error, cwd }, 'memory.index_load_failed');
+    return null;
+  }
+}
+
+/**
+ * Persist user + assistant messages to the database.
+ * Fire-and-forget — errors are logged but never thrown.
+ * These messages power auto-compact summaries when sessions expire.
+ */
+async function persistConversationMessages(
+  conversationDbId: string,
+  userMessage: string,
+  assistantResponse: string
+): Promise<void> {
+  try {
+    // Skip responses containing orchestrator commands (not user-facing content)
+    if (
+      /^\/invoke-workflow\s/m.test(assistantResponse) ||
+      /^\/register-project\s/m.test(assistantResponse)
+    ) {
+      return;
+    }
+    await messageDb.addMessage(conversationDbId, 'user', userMessage);
+    await messageDb.addMessage(conversationDbId, 'assistant', assistantResponse);
+  } catch (error) {
+    getLog().warn({ err: error as Error, conversationDbId }, 'message.persist_failed');
+  }
+}
+
+/**
+ * Generate a summary from saved messages and write a session log to Obsidian.
+ * Used by /reset, /compact, and auto-compact to preserve session history.
+ * Returns the vault path on success, null if no messages or on failure.
+ */
+async function saveSessionToObsidian(conversation: Conversation): Promise<string | null> {
+  try {
+    const messages = await messageDb.listMessages(conversation.id, 50);
+    if (messages.length === 0) return null;
+
+    const codebase = conversation.codebase_id
+      ? await codebaseDb.getCodebase(conversation.codebase_id)
+      : null;
+    if (!codebase) return null;
+
+    const transcript = messages.map(m => `[${m.role}]: ${m.content.slice(0, 500)}`).join('\n\n');
+
+    const aiClient = getAgentProvider(conversation.ai_assistant_type);
+    const cwd = conversation.cwd ?? getArchonWorkspacesPath();
+    let summary = '';
+
+    try {
+      for await (const chunk of aiClient.sendQuery(
+        `Summarize this conversation transcript concisely. Include: key decisions, current state of work, important context, and pending items. Output ONLY the summary, no preamble.\n\n---\n\n${transcript}`,
+        cwd,
+        undefined,
+        { nodeConfig: { allowed_tools: [] } }
+      )) {
+        if (chunk.type === 'assistant') summary += chunk.content;
+      }
+    } catch (error) {
+      getLog().warn({ err: error as Error }, 'session.summary_generation_failed');
+      return null;
+    }
+
+    if (!summary.trim()) return null;
+
+    return await saveSessionLogToVault(
+      getProjectSlug(codebase),
+      summary.trim(),
+      conversation.platform_type,
+      conversation.title
+    );
+  } catch (error) {
+    getLog().warn({ err: error as Error }, 'session.obsidian_save_failed');
+    return null;
+  }
+}
+
+/**
+ * Handle /reset with session log preservation.
+ * Saves conversation history to Obsidian before resetting the session.
+ */
+async function handleResetWithSessionLog(
+  platform: IPlatformAdapter,
+  conversationId: string,
+  conversation: Conversation
+): Promise<void> {
+  const session = await sessionDb.getActiveSession(conversation.id);
+  if (!session) {
+    await platform.sendMessage(conversationId, 'No active session to reset.');
+    return;
+  }
+
+  // Deactivate session first so /reset never silently fails if vault save throws
+  await sessionDb.deactivateSession(session.id, 'reset-requested');
+
+  // Save session log to Obsidian (best-effort — vault save must not block reset)
+  let vaultPath: string | null = null;
+  try {
+    vaultPath = await saveSessionToObsidian(conversation);
+  } catch (vaultError) {
+    getLog().warn({ err: toError(vaultError), conversationId }, 'session.obsidian_save_failed');
+  }
+
+  const logNote = vaultPath ? `\nSession log saved to Obsidian: ${vaultPath}` : '';
+  await platform.sendMessage(
+    conversationId,
+    `Session cleared. Starting fresh on next message.${logNote}\n\nProject and memory preserved.`
+  );
+}
+
+/**
+ * Handle /compact command.
+ * Summarizes the current conversation via AI, saves the summary to the Obsidian vault, and resets
+ * the session. Context continuity on the next message comes from MEMORY.md, not from this summary.
+ */
+async function handleCompact(
+  platform: IPlatformAdapter,
+  conversationId: string,
+  conversation: Conversation
+): Promise<void> {
+  const session = await sessionDb.getActiveSession(conversation.id);
+  if (!session) {
+    await platform.sendMessage(conversationId, 'No active session to compact.');
+    return;
+  }
+
+  await platform.sendMessage(conversationId, 'Compacting session...');
+
+  const aiClient = getAgentProvider(conversation.ai_assistant_type);
+  const cwd = conversation.cwd ?? getArchonWorkspacesPath();
+  let summary = '';
+
+  // Try resuming the existing session for summarization.
+  // If the session expired (server restart), fall back to message history.
+  const resumeId = session.assistant_session_id ?? undefined;
+  const summarizePrompt =
+    'Summarize our entire conversation so far in a structured way. Include: key decisions made, current state of work, important context, and any pending items. Be concise but complete — this summary will be used to continue the conversation in a fresh session. Output ONLY the summary, no preamble.';
+
+  try {
+    for await (const chunk of aiClient.sendQuery(summarizePrompt, cwd, resumeId, {
+      nodeConfig: { allowed_tools: [] },
+    })) {
+      if (chunk.type === 'assistant') {
+        summary += chunk.content;
+      }
+    }
+  } catch {
+    // Session expired — build summary from saved messages
+    getLog().info({ conversationId }, 'session.compact_resume_failed_using_messages');
+    const messages = await messageDb.listMessages(conversation.id, 50);
+    if (messages.length === 0) {
+      await platform.sendMessage(conversationId, 'No messages to summarize. Use /reset instead.');
+      return;
+    }
+
+    const transcript = messages.map(m => `[${m.role}]: ${m.content.slice(0, 500)}`).join('\n\n');
+
+    const fallbackPrompt = `Summarize this conversation transcript. Include: key decisions, current state of work, important context, and pending items. Be concise but complete. Output ONLY the summary.\n\n---\n\n${transcript}`;
+
+    try {
+      for await (const chunk of aiClient.sendQuery(fallbackPrompt, cwd, undefined, {
+        nodeConfig: { allowed_tools: [] },
+      })) {
+        if (chunk.type === 'assistant') {
+          summary += chunk.content;
+        }
+      }
+    } catch {
+      getLog().warn({ conversationId }, 'session.compact_fallback_failed');
+      await platform.sendMessage(conversationId, 'Failed to generate summary. Session not reset.');
+      return;
+    }
+  }
+
+  if (!summary.trim()) {
+    await platform.sendMessage(conversationId, 'Failed to generate summary. Session not reset.');
+    return;
+  }
+
+  // Save summary to Obsidian vault (shared with CLI /compress)
+  // context_summary writes removed — MEMORY.md is the shared memory now
+  const trimmedSummary = summary.trim();
+  await sessionDb.deactivateSession(session.id, 'reset-requested');
+
+  let vaultPath: string | null = null;
+  if (conversation.codebase_id) {
+    const codebase = await codebaseDb.getCodebase(conversation.codebase_id);
+    if (codebase) {
+      vaultPath = await saveSessionLogToVault(
+        getProjectSlug(codebase),
+        trimmedSummary,
+        conversation.platform_type,
+        conversation.title
+      );
+    }
+  }
+
+  getLog().info(
+    { conversationId, summaryLength: trimmedSummary.length, vaultPath },
+    'session.compact_completed'
+  );
+  const vaultNote = vaultPath ? `\nSaved to Obsidian: ${vaultPath}` : '';
+  await platform.sendMessage(
+    conversationId,
+    `Session compacted. Summary saved (${String(trimmedSummary.length)} chars).${vaultNote}\nNext message will start a fresh session with full context.`
+  );
+}
+
+/**
+ * Handle /resume command.
+ * Shows the stored context summary and confirms it will be loaded on next message.
+ */
+async function handleResume(
+  platform: IPlatformAdapter,
+  conversationId: string,
+  conversation: Conversation
+): Promise<void> {
+  // Show MEMORY.md content (shared with CLI)
+  const memoryContent = conversation.cwd ? await loadMemoryIndex(conversation.cwd) : null;
+
+  if (!memoryContent) {
+    await platform.sendMessage(
+      conversationId,
+      'No project memory found. Memory is shared with CLI — work in either interface to build it up.'
+    );
+    return;
+  }
+
+  const preview =
+    memoryContent.length > 1000 ? memoryContent.slice(0, 1000) + '\n...(truncated)' : memoryContent;
+
+  const memoryPath = computeMemoryPath(conversation.cwd ?? '');
+  await platform.sendMessage(
+    conversationId,
+    `**Project Memory** (${String(memoryContent.length)} chars, shared with CLI):\n\n${preview}\n\nPath: \`${memoryPath}/\``
+  );
+}
+
+/**
+ * Handle /setproject command.
+ * Binds a registered codebase to the current conversation so all subsequent
+ * messages route to that project automatically.
+ */
+async function handleSetProject(message: string, conversationDbId: string): Promise<string> {
+  const { args } = commandHandler.parseCommand(message);
+  if (args.length < 1) {
+    return 'Usage: /setproject <project-name>';
+  }
+
+  const projectName = args.join(' ');
+
+  // Find codebase (case-insensitive, partial path match)
+  const codebases = await codebaseDb.listCodebases();
+  const codebase = findCodebaseByName(codebases, projectName);
+
+  if (!codebase) {
+    const available = codebases.map(c => c.name).join(', ');
+    return `Project "${projectName}" not found.\nRegistered projects: ${available || 'none'}`;
+  }
+
+  // Update conversation record
+  await db.updateConversation(conversationDbId, {
+    codebase_id: codebase.id,
+    cwd: codebase.default_cwd,
+  });
+
+  getLog().info(
+    { conversationDbId, projectName: codebase.name, codebaseId: codebase.id },
+    'project.setproject_completed'
+  );
+  return `Project set to **${codebase.name}**\nWorking directory: ${codebase.default_cwd}`;
 }
 
 /**

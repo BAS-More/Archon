@@ -120,3 +120,8 @@ packages/server/.env
 skills-lock.json
 test-results/
 .archon/ralph/
+
+# Beads / Dolt files (added by bd init)
+.dolt/
+*.db
+.beads-credential-key
