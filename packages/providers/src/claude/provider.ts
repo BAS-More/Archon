@@ -143,11 +143,13 @@ function buildFirstEventHangDiagnostics(
       k => k === 'CLAUDECODE' || k.startsWith('CLAUDE_CODE_') || k.startsWith('ANTHROPIC_')
     ),
     model,
-    platform: process.platform,
-    uid: getProcessUid(),
-    isTTY: process.stdout.isTTY ?? false,
-    claudeCode: process.env.CLAUDECODE,
-    claudeCodeEntrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
+    parentProcess: {
+      platform: process.platform,
+      uid: getProcessUid(),
+      isTTY: process.stdout.isTTY ?? false,
+      claudeCode: process.env.CLAUDECODE,
+      claudeCodeEntrypoint: process.env.CLAUDE_CODE_ENTRYPOINT,
+    },
   };
 }
 
