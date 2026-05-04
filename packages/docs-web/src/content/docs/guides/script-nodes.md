@@ -73,8 +73,11 @@ The file `.archon/scripts/fetch-github-pages.ts` is loaded and executed with
    - `runtime: uv` + inline  → `uv run [--with dep ...] python -c '<code>'`
    - `runtime: uv` + named   → `uv run [--with dep ...] <path>`
 4. **Capture.** `stdout` (with the trailing newline stripped) becomes
-   `$nodeId.output`. `stderr` is logged as a warning and posted to the
-   conversation but does **not** fail the node. A non-zero exit code fails it.
+   `$nodeId.output`. On a successful run, `stderr` is logged as a warning and
+   posted to the conversation but does **not** fail the node. A non-zero exit
+   code fails the node; on failure, `stderr` is the diagnostic surfaced in the
+   error message (`Script node 'X' failed [exit N]: <stderr>`) — the script
+   body is never echoed back to users.
 
 ## YAML Schema
 
@@ -199,6 +202,25 @@ Variables are substituted into the `script` text **as raw strings, without
 shell quoting** — unlike `bash:` nodes, where `$nodeId.output` values are
 auto-quoted. Treat substituted values as untrusted input and parse them with
 language features, not by interpolating into shell syntax.
+
+:::caution[Avoid String.raw with `$nodeId.output`]
+The pattern `` String.raw`$nodeId.output` `` looks safe but fails silently when
+the substituted value contains a backtick — common in AI-generated markdown,
+`output_format` payloads, or any output with inline code spans. The backtick
+terminates the template literal early, producing a cryptic `Expected ";"` parse
+error at runtime.
+
+**Use direct assignment instead.** JSON is a strict subset of JavaScript
+expression syntax, so the substituted value is always a valid JS literal:
+
+```typescript
+// Safe — works for any valid JSON, including content with backticks
+const data = $fetch-issue.output;
+
+// Fragile — breaks if output contains a backtick
+const data = JSON.parse(String.raw`$fetch-issue.output`);  // DON'T
+```
+:::
 
 For **named scripts**, variables are not passed automatically. Read them from
 the environment (`process.env.USER_MESSAGE`, `os.environ['USER_MESSAGE']`)
