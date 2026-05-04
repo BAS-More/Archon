@@ -8,7 +8,7 @@
  * Always overwrites existing files to ensure the latest skill version
  * shipped with the current Archon binary is installed.
  */
-import { existsSync, mkdirSync, writeFileSync } from 'fs';
+import { closeSync, existsSync, mkdirSync, openSync, writeFileSync } from 'fs';
 import { dirname, join, resolve } from 'path';
 
 /**
@@ -33,7 +33,12 @@ export async function copyArchonSkill(targetPath: string): Promise<void> {
     const dest = join(skillRoot, relativePath);
     const destDir = dirname(dest);
     mkdirSync(destDir, { recursive: true });
-    writeFileSync(dest, content);
+    const fd = openSync(dest, 'w', 0o600);
+    try {
+      writeFileSync(fd, content);
+    } finally {
+      closeSync(fd);
+    }
   }
 }
 
