@@ -92,42 +92,6 @@ function makeResultMarkdownComponents(
   };
 }
 
-/** Extract ToolCallDisplay objects from workflow_events (tool_called + tool_completed pairs).
- *  Mirrors the greedy matching in WorkflowExecution.tsx — duplicated intentionally (< 3 uses). */
-function extractToolCallsFromEvents(events: WorkflowEventResponse[]): ToolCallDisplay[] {
-  const completedEvents = events
-    .filter(ev => ev.event_type === 'tool_completed')
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime());
-
-  const usedCompleted = new Set<string>();
-
-  return events
-    .filter(ev => ev.event_type === 'tool_called')
-    .sort((a, b) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime())
-    .map(ev => {
-      const evTime = new Date(ev.created_at).getTime();
-      const toolName = ev.data.tool_name as string;
-      const stepName = ev.step_name ?? undefined;
-      const completed = completedEvents.find(
-        c =>
-          !usedCompleted.has(c.id) &&
-          (c.data.tool_name as string) === toolName &&
-          new Date(c.created_at).getTime() >= evTime &&
-          (c.step_name ?? undefined) === stepName
-      );
-      if (completed) usedCompleted.add(completed.id);
-      return {
-        id: ev.id,
-        name: toolName,
-        input: (ev.data.tool_input as Record<string, unknown>) ?? {},
-        output: undefined, // tool output not extracted here; WorkflowExecution.tsx also omits it
-        duration: completed ? (completed.data.duration_ms as number | undefined) : undefined,
-        startedAt: evTime, // epoch ms from ev.created_at — these runs are always terminal so the timer never ticks
-        isExpanded: false,
-      };
-    });
-}
-
 function WorkflowResultCard({
   workflowName,
   runId,
