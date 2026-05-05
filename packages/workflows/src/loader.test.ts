@@ -343,7 +343,7 @@ nodes:
 
       // Unknown providers are accepted (validated against registry at execution time)
       expect(workflows).toHaveLength(1);
-      expect(workflows[0].provider).toBe('invalid');
+      expect(workflows[0].provider).toBe('claud');
     });
 
     it('should reject claude model with codex provider at load time', async () => {
@@ -365,7 +365,9 @@ nodes:
       expect(result.workflows).toHaveLength(0);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].errorType).toBe('validation_error');
-      expect(result.errors[0].error).toContain("Unknown provider 'claud'");
+      expect(result.errors[0].error).toContain(
+        "Model 'sonnet' is not compatible with provider 'codex'"
+      );
     });
 
     it('should accept any model string with a known provider (SDK validates at run time)', async () => {
