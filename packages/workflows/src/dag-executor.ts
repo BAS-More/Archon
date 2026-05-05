@@ -367,13 +367,6 @@ async function resolveNodeProviderAndModel(
     );
   }
 
-  const providerAssistantConfig = config.assistants[provider];
-  const model: string | undefined =
-    node.model ??
-    (provider === workflowProvider
-      ? workflowModel
-      : (providerAssistantConfig?.model as string | undefined));
-
   // Get provider capabilities for capability warnings (static lookup, no instantiation)
   const caps = getProviderCapabilities(provider);
 

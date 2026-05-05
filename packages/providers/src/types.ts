@@ -271,6 +271,9 @@ export interface ProviderRegistration {
 
   /** Whether this is a built-in (maintained by core team) or community provider */
   builtIn: boolean;
+
+  /** Return true if model is compatible with this provider (used by model-validation.ts) */
+  isModelCompatible(model: string): boolean;
 }
 
 /**
