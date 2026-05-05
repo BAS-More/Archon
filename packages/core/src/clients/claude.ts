@@ -13,10 +13,9 @@
  * - CLAUDE_USE_GLOBAL_AUTH=false: Use explicit tokens from env vars
  * - Not set: Auto-detect - use tokens if present in env, otherwise global auth
  */
-import { readFileSync, writeFileSync, mkdirSync, chmodSync, renameSync } from 'fs';
+import { readFileSync, writeFileSync, mkdtempSync, chmodSync, renameSync } from 'fs';
 import { join } from 'path';
 import { tmpdir } from 'os';
-import { createHash } from 'crypto';
 import {
   query,
   type Options,
@@ -67,12 +66,11 @@ export function resolveWindowsBunfsCliPath(embeddedPath: string): string {
   }
   try {
     const content = readFileSync(embeddedPath);
-    const hash = createHash('sha256').update(content).digest('hex').slice(0, 16);
-    const tmpDir = join(tmpdir(), `claude-agent-sdk-${hash}`);
+    // mkdtempSync creates a directory with an unpredictable suffix, avoiding
+    // symlink-based TOCTOU attacks on shared temp directories.
+    const tmpDir = mkdtempSync(join(tmpdir(), 'archon-claude-'));
     const tmpPath = join(tmpDir, 'cli.js');
-    mkdirSync(tmpDir, { recursive: true });
-    // Atomic write: write to temp file then rename to avoid truncation races
-    const tmpFile = join(tmpDir, `cli.js.tmp.${process.pid}`);
+    const tmpFile = join(tmpDir, 'cli.js.tmp');
     writeFileSync(tmpFile, content);
     chmodSync(tmpFile, 0o755);
     renameSync(tmpFile, tmpPath);

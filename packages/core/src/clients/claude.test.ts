@@ -1,5 +1,5 @@
 import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test';
-import { mkdirSync, writeFileSync, readFileSync, rmSync } from 'fs';
+import { mkdirSync, mkdtempSync, writeFileSync, readFileSync, rmSync } from 'fs';
 import { tmpdir } from 'os';
 import { join } from 'path';
 import { createMockLogger } from '../test/mocks/logger';
@@ -1125,8 +1125,7 @@ describe('resolveWindowsBunfsCliPath', () => {
 
   test('extracts Windows Bun virtual FS paths to a real temp file', () => {
     const testContent = '// fake cli.js content for test';
-    const fakeBunDir = join(tmpdir(), 'archon-test-bunfs');
-    mkdirSync(fakeBunDir, { recursive: true });
+    const fakeBunDir = mkdtempSync(join(tmpdir(), 'archon-test-bunfs-'));
     const fakeBunPath = join(fakeBunDir, '~BUN-test-cli.js');
     writeFileSync(fakeBunPath, testContent);
 
