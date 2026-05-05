@@ -82,10 +82,7 @@ function parseDagNode(raw: unknown, index: number, errors: string[]): DagNode | 
   if (nodeType !== undefined && aiFields !== undefined) {
     const presentAiFields = aiFields.filter(f => (raw as Record<string, unknown>)[f] !== undefined);
     if (presentAiFields.length > 0) {
-      getLog().warn(
-        { id: node.id, fields: presentAiFields },
-        `${nodeType}_node_ai_fields_ignored`
-      );
+      getLog().warn({ id: node.id, fields: presentAiFields }, `${nodeType}_node_ai_fields_ignored`);
     }
   }
 
