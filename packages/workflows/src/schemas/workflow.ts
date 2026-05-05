@@ -56,11 +56,7 @@ export type WorkflowWorktreePolicy = z.infer<typeof workflowWorktreePolicySchema
 export const workflowBaseSchema = z.object({
   name: z.string().min(1),
   description: z.string().min(1),
-<<<<<<< HEAD
-  provider: z.string().trim().min(1).optional(),
-=======
   provider: z.string().min(1).optional(),
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
   model: z.string().optional(),
   modelReasoningEffort: modelReasoningEffortSchema.optional(),
   webSearchMode: webSearchModeSchema.optional(),

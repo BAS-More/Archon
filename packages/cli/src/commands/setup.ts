@@ -39,13 +39,10 @@ import { homedir } from 'os';
 import { randomBytes } from 'crypto';
 import { spawn, execSync, type ChildProcess } from 'child_process';
 import { getRegisteredProviders } from '@archon/providers';
-<<<<<<< HEAD
 import {
   getArchonEnvPath as pathsGetArchonEnvPath,
   getRepoArchonEnvPath as pathsGetRepoArchonEnvPath,
 } from '@archon/paths';
-=======
->>>>>>> 701a2ac1 (fix: remove remaining hardcoded provider assumptions and regenerate types)
 
 // =============================================================================
 // Types

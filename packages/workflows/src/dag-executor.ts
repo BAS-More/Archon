@@ -21,11 +21,8 @@ import type {
   ProviderCapabilities,
   TokenUsage,
 } from '@archon/providers/types';
-import {
-  getProviderCapabilities,
-  getRegisteredProviders,
-  isRegisteredProvider,
-} from '@archon/providers';
+import { getProviderCapabilities, getRegisteredProviders } from '@archon/providers';
+import { inferProviderFromModel, isModelCompatible } from './model-validation';
 import type {
   DagNode,
   ApprovalNode,
@@ -350,12 +347,6 @@ async function resolveNodeProviderAndModel(
   model: string | undefined;
   options: SendQueryOptions | undefined;
 }> {
-<<<<<<< HEAD
-  // Provider is explicit: node.provider ?? workflow.provider. Model never
-  // influences provider selection. Model strings pass through to the SDK.
-  const provider: string = node.provider ?? workflowProvider;
-  if (!isRegisteredProvider(provider)) {
-=======
   const provider: string = node.provider ?? inferProviderFromModel(node.model, workflowProvider);
 
   const providerAssistantConfig = (
@@ -368,7 +359,6 @@ async function resolveNodeProviderAndModel(
       : (providerAssistantConfig?.model as string | undefined));
 
   if (!isModelCompatible(provider, model)) {
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
     throw new Error(
       `Node '${node.id}': unknown provider '${provider}'. ` +
         `Registered: ${getRegisteredProviders()
@@ -1718,12 +1708,8 @@ function buildLoopNodeOptions(
   if (config.envVars && Object.keys(config.envVars).length > 0) {
     options.env = config.envVars;
   }
-<<<<<<< HEAD
-  options.assistantConfig = config.assistants[provider] ?? {};
-=======
   options.assistantConfig =
     (config.assistants as Record<string, Record<string, unknown> | undefined>)[provider] ?? {};
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
   // Pass workflow-level options as nodeConfig so providers can apply them
   if (workflowLevelOptions) {
     options.nodeConfig = {
@@ -2748,36 +2734,17 @@ export async function executeDagWorkflow(
 
           // 3b. Loop node dispatch — manages its own AI sessions and iteration
           if (isLoopNode(node)) {
-<<<<<<< HEAD
-            // Resolve per-node provider/model overrides (same logic as other node types).
-            // Provider is explicit; model passes through to the SDK. Throw on an
-            // unknown provider so the outer catch below emits the standard
-            // node_failed event + user-facing message — the same path
-            // resolveNodeProviderAndModel uses for non-loop nodes.
-            const loopProvider: string = node.provider ?? workflowProvider;
-            if (!isRegisteredProvider(loopProvider)) {
-              throw new Error(
-                `Node '${node.id}': unknown provider '${loopProvider}'. Registered: ${getRegisteredProviders()
-                  .map(p => p.id)
-                  .join(', ')}`
-              );
-            }
-            const loopAssistantConfig = config.assistants[loopProvider];
-=======
             // Resolve per-node provider/model overrides (same logic as other node types)
             const loopProvider: string =
               node.provider ?? inferProviderFromModel(node.model, workflowProvider);
             const loopAssistantConfig = (
               config.assistants as Record<string, Record<string, unknown> | undefined>
             )[loopProvider];
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
             const loopModel: string | undefined =
               node.model ??
               (loopProvider === workflowProvider
                 ? workflowModel
                 : (loopAssistantConfig?.model as string | undefined));
-<<<<<<< HEAD
-=======
 
             if (!isModelCompatible(loopProvider, loopModel)) {
               return {
@@ -2789,7 +2756,6 @@ export async function executeDagWorkflow(
                 },
               };
             }
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
 
             const output = await executeLoopNode(
               deps,

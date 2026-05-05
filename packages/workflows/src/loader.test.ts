@@ -28,11 +28,7 @@ mock.module('@archon/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
-<<<<<<< HEAD
-// Bootstrap provider registry (needed by isRegisteredProvider checks at load time)
-=======
 // Bootstrap provider registry (needed by isModelCompatible in dag-node schema)
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
 import { registerBuiltinProviders, clearRegistry } from '@archon/providers';
 clearRegistry();
 registerBuiltinProviders();
@@ -343,8 +339,6 @@ nodes:
       await writeFile(join(workflowDir, 'test.yaml'), yamlInvalidProvider);
 
       const result = await discoverWorkflows(testDir, { loadDefaults: false });
-<<<<<<< HEAD
-=======
       const workflows = result.workflows.map(ws => ws.workflow);
 
       // Unknown providers are accepted (validated against registry at execution time)
@@ -367,7 +361,6 @@ nodes:
       await writeFile(join(workflowDir, 'invalid.yaml'), invalidYaml);
 
       const result = await discoverWorkflows(testDir, { loadDefaults: false });
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
 
       expect(result.workflows).toHaveLength(0);
       expect(result.errors).toHaveLength(1);

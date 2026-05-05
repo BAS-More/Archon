@@ -13,7 +13,8 @@ import { executeDagWorkflow } from './dag-executor';
 import { logWorkflowStart, logWorkflowError } from './logger';
 import { formatDuration, parseDbTimestamp } from './utils/duration';
 import { getWorkflowEventEmitter } from './event-emitter';
-import { isRegisteredProvider, getRegisteredProviders } from '@archon/providers';
+import { getRegisteredProviders } from '@archon/providers';
+import { inferProviderFromModel, isModelCompatible } from './model-validation';
 import { classifyError } from './executor-shared';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
@@ -277,14 +278,6 @@ export async function executeWorkflow(
 
   const docsDir = config.docsPath ?? 'docs/';
 
-<<<<<<< HEAD
-  // Resolve provider and model once (used by all nodes).
-  // Provider is explicit: node.provider ?? workflow.provider ?? config.assistant.
-  // Model strings pass through to the SDK as-is — the SDK validates at request time.
-  const resolvedProvider: string = workflow.provider ?? config.assistant;
-  const providerSource = workflow.provider ? 'workflow definition' : 'config';
-  if (!isRegisteredProvider(resolvedProvider)) {
-=======
   // Resolve provider and model once (used by all nodes)
   // When workflow sets a model but not a provider, infer provider from the model.
   // e.g. model: sonnet → provider: claude, even if config.assistant is codex.
@@ -305,7 +298,6 @@ export async function executeWorkflow(
   )[resolvedProvider];
   const resolvedModel = workflow.model ?? (assistantDefaults?.model as string | undefined);
   if (!isModelCompatible(resolvedProvider, resolvedModel)) {
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
     throw new Error(
       `Workflow '${workflow.name}': unknown provider '${resolvedProvider}'. ` +
         `Registered: ${getRegisteredProviders()
@@ -313,8 +305,6 @@ export async function executeWorkflow(
           .join(', ')}`
     );
   }
-  const assistantDefaults = config.assistants[resolvedProvider];
-  const resolvedModel = workflow.model ?? (assistantDefaults?.model as string | undefined);
 
   getLog().info(
     {
