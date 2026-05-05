@@ -16,12 +16,19 @@ export async function createCodebase(data: {
   name: string;
   repository_url?: string;
   default_cwd: string;
+  default_branch?: string;
   ai_assistant_type?: string;
 }): Promise<Codebase> {
   const assistantType = data.ai_assistant_type ?? 'claude';
   const result = await pool.query<Codebase>(
-    'INSERT INTO remote_agent_codebases (name, repository_url, default_cwd, ai_assistant_type) VALUES ($1, $2, $3, $4) RETURNING *',
-    [data.name, data.repository_url ?? null, data.default_cwd, assistantType]
+    'INSERT INTO remote_agent_codebases (name, repository_url, default_cwd, default_branch, ai_assistant_type) VALUES ($1, $2, $3, $4, $5) RETURNING *',
+    [
+      data.name,
+      data.repository_url ?? null,
+      data.default_cwd,
+      data.default_branch ?? null,
+      assistantType,
+    ]
   );
   if (!result.rows[0]) {
     throw new Error('Failed to create codebase: INSERT succeeded but no row returned');
@@ -59,9 +66,12 @@ export async function getCodebaseCommands(
   if (typeof raw === 'string') {
     try {
       parsed = JSON.parse(raw);
-    } catch {
-      getLog().error({ codebaseId: id, raw }, 'db.codebase_commands_json_parse_failed');
-      return {};
+    } catch (err) {
+      getLog().error({ codebaseId: id, raw, err }, 'db.codebase_commands_json_parse_failed');
+      throw new Error(
+        `Corrupt commands JSON for codebase ${id}: unable to parse stored data. ` +
+          `Run UPDATE remote_agent_codebases SET commands = '{}' WHERE id = '${id}' to reset.`
+      );
     }
   } else {
     parsed = raw ?? {};

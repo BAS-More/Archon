@@ -16,23 +16,44 @@
 import type {
   ClaudeProviderDefaults,
   CodexProviderDefaults,
+  PiProviderDefaults,
   ProviderDefaultsMap,
 } from '@archon/providers/types';
 
-export type { ClaudeProviderDefaults, CodexProviderDefaults, ProviderDefaultsMap };
+export type {
+  ClaudeProviderDefaults,
+  CodexProviderDefaults,
+  PiProviderDefaults,
+  ProviderDefaultsMap,
+};
 
 /**
- * Intersection type: generic ProviderDefaultsMap (any string key) with typed built-in entries.
- * Built-in keys are typed so parseClaudeConfig/parseCodexConfig get type safety without casts.
- * Community providers use the generic [string] index. This is intentional — removing the
- * built-in intersection would force `as` casts everywhere built-in config is accessed.
+ * Intersection type: generic `ProviderDefaultsMap` (any string key) with
+ * typed built-in entries.
+ *
+ * The built-in entries exist ONLY to give call sites like
+ * `config.assistants.claude.model` IDE autocomplete without `as` casts.
+ * They do NOT provide parser safety (each provider's `parseXxxConfig`
+ * already takes `Record<string, unknown>` and defends itself).
+ *
+ * Community providers should NOT be added here — they live behind the
+ * generic `[string]` index. Adding a new community provider must not
+ * require a core-package type change; that's the whole point of Phase 2.
  */
 export type AssistantDefaultsConfig = ProviderDefaultsMap & {
   claude?: ClaudeProviderDefaults;
   codex?: CodexProviderDefaults;
 };
 
-/** Required variant — built-ins always present after config merge (registerBuiltinProviders guarantees it). */
+/**
+ * Required variant — built-ins are always present after `loadConfig`.
+ *
+ * `getDefaults()` seeds every registered provider (built-in + community)
+ * with `{}`, so community providers appear in the map too — just typed as
+ * `ProviderDefaults` via the generic index rather than a specific shape.
+ * `registerBuiltinProviders()` is called before `loadConfig()` at every
+ * process entrypoint, so claude/codex are guaranteed present.
+ */
 export type AssistantDefaults = ProviderDefaultsMap & {
   claude: ClaudeProviderDefaults;
   codex: CodexProviderDefaults;
@@ -155,6 +176,29 @@ export interface RepoConfig {
      * @default true
      */
     initSubmodules?: boolean;
+
+    /**
+     * Per-project worktree directory (relative to repo root). When set,
+     * worktrees are created at `<repoRoot>/<path>/<branch>` instead of under
+     * `~/.archon/worktrees/` or the workspaces layout.
+     *
+     * Opt-in — co-locates worktrees with the repo so they appear in the IDE
+     * file tree. The user is responsible for adding the directory to their
+     * `.gitignore` (no automatic file mutation).
+     *
+     * Path resolution precedence (highest to lowest):
+     *   1. this `worktree.path` (repo-local)
+     *   2. global `paths.worktrees` (absolute override in `~/.archon/config.yaml`)
+     *   3. auto-detected project-scoped (`~/.archon/workspaces/owner/repo/...`)
+     *   4. default global (`~/.archon/worktrees/`)
+     *
+     * Must be a safe relative path: no leading `/`, no `..` segments. Absolute
+     * or escaping values fail loudly at worktree creation (Fail Fast — no silent
+     * fallback).
+     *
+     * @example '.worktrees'
+     */
+    path?: string;
   };
 
   /**

@@ -10,25 +10,15 @@
 // Must be the very first import — strips Bun-auto-loaded CWD .env keys before
 // any module reads process.env at init time (e.g. @archon/paths/logger reads LOG_LEVEL).
 import '@archon/paths/strip-cwd-env-boot';
+// Then load archon-owned env from ~/.archon/.env (user scope) and
+// <cwd>/.archon/.env (repo scope, wins over user). Both with override: true.
+// See packages/paths/src/env-loader.ts and the three-path model (#1302 / #1303).
+import { loadArchonEnv } from '@archon/paths/env-loader';
+loadArchonEnv(process.cwd());
+
 import { parseArgs } from 'util';
-import { config } from 'dotenv';
 import { resolve } from 'path';
 import { existsSync } from 'fs';
-
-// Load ~/.archon/.env with override: true — Archon-specific config must win
-// over shell-inherited env vars (e.g. PORT, LOG_LEVEL from shell profile).
-// CWD .env keys are already gone (stripCwdEnv above), so override only
-// affects shell-inherited values, which is the intended behavior.
-const globalEnvPath = resolve(process.env.HOME ?? '~', '.archon', '.env');
-if (existsSync(globalEnvPath)) {
-  const result = config({ path: globalEnvPath, override: true });
-  if (result.error) {
-    // Logger may not be available yet (early startup), so use console for user-facing error
-    console.error(`Error loading .env from ${globalEnvPath}: ${result.error.message}`);
-    console.error('Hint: Check for syntax errors in your .env file.');
-    process.exit(1);
-  }
-}
 
 // CLAUDECODE=1 warning is emitted inside stripCwdEnv() (boot import above)
 // BEFORE the marker is deleted from process.env. No duplicate warning here.
@@ -41,11 +31,27 @@ if (!process.env.CLAUDE_API_KEY && !process.env.CLAUDE_CODE_OAUTH_TOKEN) {
   }
 }
 
+// Warn if running from inside a Claude Code session. Nested Claude Code
+// subprocess launches have a history of hanging (keychain/session/TTY state,
+// upstream SDK quirks) even when Archon's subprocess env strip works. Users
+// hitting this class of issue should use `archon serve` + web UI / HTTP API
+// from a non-nested shell. See coleam00/Archon#1067.
+if (process.env.CLAUDECODE === '1' && process.env.ARCHON_SUPPRESS_NESTED_CLAUDE_WARNING !== '1') {
+  console.warn(
+    '⚠  Detected CLAUDECODE=1 — you appear to be running `archon` from inside a Claude Code session.\n' +
+      '   If workflows hang silently at dag_node_started, this is a known class of issue.\n' +
+      '   Workaround: run `archon serve` from a regular shell and use the web UI or HTTP API.\n' +
+      '   Details: https://github.com/coleam00/Archon/issues/1067\n' +
+      '   Suppress this warning: export ARCHON_SUPPRESS_NESTED_CLAUDE_WARNING=1'
+  );
+}
+
 // DATABASE_URL is no longer required - SQLite will be used as default
 
 // Bootstrap provider registry before any provider lookups
-import { registerBuiltinProviders } from '@archon/providers';
+import { registerBuiltinProviders, registerCommunityProviders } from '@archon/providers';
 registerBuiltinProviders();
+registerCommunityProviders();
 
 // Import commands after dotenv is loaded
 import { versionCommand } from './commands/version';
@@ -71,6 +77,7 @@ import {
 import { continueCommand } from './commands/continue';
 import { chatCommand } from './commands/chat';
 import { setupCommand } from './commands/setup';
+import { skillInstallCommand } from './commands/skill';
 import { validateWorkflowsCommand, validateCommandsCommand } from './commands/validate';
 import { serveCommand } from './commands/serve';
 import { closeDatabase } from '@archon/core';
@@ -80,6 +87,7 @@ import {
   checkForUpdate,
   BUNDLED_IS_BINARY,
   BUNDLED_VERSION,
+  shutdownTelemetry,
 } from '@archon/paths';
 import * as git from '@archon/git';
 
@@ -112,9 +120,10 @@ Commands:
   continue <branch> [msg]    Continue work on an existing worktree with prior context
   complete <branch> [...]    Complete branch lifecycle (remove worktree + branches)
   serve                      Start the web UI server (downloads web UI on first run)
+  skill install [path]       Install the bundled Archon skill into .claude/skills/archon
   validate workflows [name]  Validate workflow definitions and their references
   validate commands [name]   Validate command files
-  version                    Show version info
+  version, --version, -V     Show version info (also -v when used alone)
   help                       Show this help message
 
 Options:
@@ -140,6 +149,8 @@ Examples:
   archon workflow run implement --branch feature-auth "Implement auth"
   archon workflow run quick-fix --no-worktree "Fix typo"
   archon continue fix/issue-42 --workflow archon-smart-pr-review "Review the changes"
+  archon skill install
+  archon skill install /path/to/project
 `);
 }
 
@@ -174,6 +185,21 @@ async function printUpdateNotice(quiet: boolean | undefined): Promise<void> {
  * Main CLI entry point
  * Returns exit code (0 = success, non-zero = failure)
  */
+/**
+ * Detect a request for version output. Treats `--version`, `-V`, and the
+ * single-dash typo `-version` as version flags anywhere in argv. `-v` keeps
+ * its role as the short alias for `--verbose`, except when used alone — then
+ * it falls back to version output to match the convention used by node, npm,
+ * bun, and most other CLIs.
+ */
+function isVersionRequest(args: string[]): boolean {
+  if (args.length === 1 && args[0] === '-v') return true;
+  for (const arg of args) {
+    if (arg === '--version' || arg === '-V' || arg === '-version') return true;
+  }
+  return false;
+}
+
 async function main(): Promise<number> {
   const args = process.argv.slice(2);
 
@@ -181,6 +207,18 @@ async function main(): Promise<number> {
   if (args.length === 0) {
     printUsage();
     return 0;
+  }
+
+  // Version flag aliases bypass option parsing and the git-repo check so
+  // `archon --version` works the same as `archon version` from any directory.
+  if (isVersionRequest(args)) {
+    try {
+      await versionCommand();
+      return 0;
+    } finally {
+      await shutdownTelemetry();
+      await closeDb();
+    }
   }
 
   // Parse global options
@@ -210,6 +248,8 @@ async function main(): Promise<number> {
         'no-context': { type: 'boolean' },
         port: { type: 'string' },
         'download-only': { type: 'boolean' },
+        scope: { type: 'string' },
+        force: { type: 'boolean' },
       },
       allowPositionals: true,
       strict: false, // Allow unknown flags to pass through
@@ -242,7 +282,7 @@ async function main(): Promise<number> {
   const subcommand = positionals[1];
 
   // Commands that don't require git repo validation
-  const noGitCommands = ['version', 'help', 'setup', 'chat', 'continue', 'serve'];
+  const noGitCommands = ['version', 'help', 'setup', 'chat', 'continue', 'serve', 'skill'];
   const requiresGitRepo = !noGitCommands.includes(command ?? '');
 
   try {
@@ -296,9 +336,30 @@ async function main(): Promise<number> {
         break;
       }
 
-      case 'setup':
-        await setupCommand({ spawn: spawnFlag, repoPath: cwd });
+      case 'setup': {
+        const rawScope = values.scope as string | undefined;
+        if (rawScope !== undefined && rawScope !== 'home' && rawScope !== 'project') {
+          console.error(`Error: Invalid --scope: "${rawScope}". Must be "home" or "project".`);
+          return 1;
+        }
+        const scope: 'home' | 'project' = rawScope ?? 'home';
+        const forceFlag = (values.force as boolean | undefined) ?? false;
+        // For --scope project, resolve to the git repo root so running from a
+        // subdirectory writes to <repo-root>/.archon/.env (what loadArchonEnv
+        // reads at boot) — not <subdir>/.archon/.env.
+        let repoPath = cwd;
+        if (scope === 'project') {
+          const repoRoot = await git.findRepoRoot(cwd);
+          if (!repoRoot) {
+            console.error('Error: --scope project requires running from inside a git repository.');
+            console.error('Run from the repo root, pass --cwd <repo>, or use --scope home.');
+            return 1;
+          }
+          repoPath = repoRoot;
+        }
+        await setupCommand({ spawn: spawnFlag, repoPath, scope, force: forceFlag });
         break;
+      }
 
       case 'workflow':
         switch (subcommand) {
@@ -554,6 +615,26 @@ async function main(): Promise<number> {
         return await serveCommand({ port: servePort, downloadOnly });
       }
 
+      case 'skill': {
+        switch (subcommand) {
+          case 'install': {
+            // Optional positional path; otherwise install into the resolved cwd.
+            const targetArg = positionals[2];
+            const targetPath = targetArg ? resolve(targetArg) : cwd;
+            return await skillInstallCommand(targetPath);
+          }
+
+          default:
+            if (subcommand === undefined) {
+              console.error('Missing skill subcommand');
+            } else {
+              console.error(`Unknown skill subcommand: ${subcommand}`);
+            }
+            console.error('Available: install');
+            return 1;
+        }
+      }
+
       default:
         if (command === undefined) {
           console.error('Missing command');
@@ -573,6 +654,9 @@ async function main(): Promise<number> {
     }
     return 1;
   } finally {
+    // Flush queued telemetry events before the CLI process exits.
+    // Short-lived CLI commands lose buffered events if shutdown() is skipped.
+    await shutdownTelemetry();
     // Always close database connection
     await closeDb();
   }

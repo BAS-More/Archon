@@ -918,12 +918,15 @@ Talk naturally — the orchestrator routes your requests to the right workflow a
 - \`/workflow reject <id>\` — Reject a paused run
 
 **Projects**
+- \`/setproject <name>\` — Bind a project to this conversation
 - \`/register-project <name> <path>\` — Register a local project
 - \`/update-project <name> <new-path>\` — Update a project's path
 - \`/remove-project <name>\` — Remove a registered project
 
 **Session**
 - \`/status\` — Show current session and project info
+- \`/compact\` — Summarize and compress the session (frees context window)
+- \`/resume\` — Show project memory (shared with CLI)
 - \`/reset\` — Clear conversation and start fresh
 - \`/help\` — Show this help message
 

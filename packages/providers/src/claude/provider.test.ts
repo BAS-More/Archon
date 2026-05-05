@@ -1,4 +1,4 @@
-import { describe, test, expect, mock, beforeEach, spyOn } from 'bun:test';
+import { describe, test, expect, mock, beforeEach, afterEach, spyOn } from 'bun:test';
 import { createMockLogger } from '../test/mocks/logger';
 
 const mockLogger = createMockLogger();
@@ -18,16 +18,35 @@ mock.module('@anthropic-ai/claude-agent-sdk', () => ({
 
 import { ClaudeProvider, shouldPassNoEnvFile } from './provider';
 import * as claudeModule from './provider';
+import * as binaryResolver from './binary-resolver';
 
 describe('shouldPassNoEnvFile', () => {
-  test('returns true when cliPath is undefined (dev mode — SDK spawns cli.js via Bun)', () => {
-    expect(shouldPassNoEnvFile(undefined)).toBe(true);
+  test('returns false when cliPath is undefined (dev mode — SDK 0.2.x resolves a native binary)', () => {
+    // Pre-0.2.x the SDK shipped cli.js and dev mode = JS. Since 0.2.x the
+    // SDK ships per-platform native binaries via optional deps. The flag
+    // (a Bun runtime option) is meaningless to native binaries and gets
+    // rejected as `error: unknown option '--no-env-file'`. CWD .env leak
+    // protection comes from stripCwdEnv() at entry, not from this flag.
+    expect(shouldPassNoEnvFile(undefined)).toBe(false);
   });
 
-  test('returns true for an explicit cli.js path (npm-installed, SDK spawns via Bun/Node)', () => {
+  test('returns true for an explicit cli.js path (legacy npm-installed cli.js, SDK spawns via Bun)', () => {
     expect(
       shouldPassNoEnvFile('/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js')
     ).toBe(true);
+  });
+
+  test('returns true for .mjs and .cjs paths (also Bun-runnable JS entry points)', () => {
+    expect(shouldPassNoEnvFile('/path/to/cli.mjs')).toBe(true);
+    expect(shouldPassNoEnvFile('/path/to/cli.cjs')).toBe(true);
+  });
+
+  test('returns false for non-Bun-runnable JS-adjacent extensions', () => {
+    // `.ts`/`.tsx`/`.jsx` are deliberately excluded — the SDK never shipped
+    // those as entry points, so accepting them would only widen misconfiguration.
+    expect(shouldPassNoEnvFile('/path/to/cli.ts')).toBe(false);
+    expect(shouldPassNoEnvFile('/path/to/cli.tsx')).toBe(false);
+    expect(shouldPassNoEnvFile('/path/to/cli.jsx')).toBe(false);
   });
 
   test('returns false for a native binary path (curl installer, SDK execs directly)', () => {
@@ -97,6 +116,7 @@ describe('ClaudeProvider', () => {
         mcp: true,
         hooks: true,
         skills: true,
+        agents: true,
         toolRestrictions: true,
         structuredOutput: true,
         envInjection: true,
@@ -504,8 +524,10 @@ describe('ClaudeProvider', () => {
       const callArgs = mockQuery.mock.calls[0][0] as {
         options: { env: NodeJS.ProcessEnv; executableArgs?: string[] };
       };
-      // --no-env-file prevents Bun from auto-loading .env in subprocess CWD
-      expect(callArgs.options.executableArgs).toEqual(['--no-env-file']);
+      // executableArgs is omitted when cliPath is undefined (dev mode, SDK
+      // 0.2.x resolves a native binary). CWD .env leak protection comes
+      // from stripCwdEnv() at entry, not from the --no-env-file flag.
+      expect(callArgs.options.executableArgs).toBeUndefined();
       expect(callArgs.options.env.CUSTOM_USER_KEY).toBe('user-trusted-value');
       // Windows uses "Path" casing in spread objects and USERPROFILE instead of HOME
       const envPath = callArgs.options.env.PATH ?? callArgs.options.env.Path;
@@ -518,6 +540,37 @@ describe('ClaudeProvider', () => {
       // Cleanup
       if (originalKey !== undefined) process.env.CUSTOM_USER_KEY = originalKey;
       else delete process.env.CUSTOM_USER_KEY;
+    });
+
+    test('passes executableArgs: [--no-env-file] when cliPath ends in a Bun-runnable JS extension', async () => {
+      // Belt-and-suspenders integration check: the dev-mode path is exercised
+      // in the test above (executableArgs: undefined). This test exercises the
+      // legacy explicit-cli.js path through the real buildBaseClaudeOptions
+      // codepath, so a regression in the conditional spread would be caught.
+      const spy = spyOn(binaryResolver, 'resolveClaudeBinaryPath').mockResolvedValue(
+        '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'
+      );
+
+      mockQuery.mockImplementation(async function* () {
+        // empty
+      });
+
+      for await (const _ of client.sendQuery('test', '/workspace')) {
+        // consume
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0] as {
+        options: {
+          executableArgs?: string[];
+          pathToClaudeCodeExecutable?: string;
+        };
+      };
+      expect(callArgs.options.executableArgs).toEqual(['--no-env-file']);
+      expect(callArgs.options.pathToClaudeCodeExecutable).toBe(
+        '/usr/local/lib/node_modules/@anthropic-ai/claude-code/cli.js'
+      );
+
+      spy.mockRestore();
     });
 
     test('classifies exit code errors as crash and retries up to 3 times', async () => {
@@ -673,12 +726,32 @@ describe('ClaudeProvider', () => {
       expect(callArgs.options.settingSources).toEqual(['project', 'user']);
     });
 
-    test('defaults settingSources to project when not provided', async () => {
+    test('defaults settingSources to project + user when not provided', async () => {
       mockQuery.mockImplementation(async function* () {
         yield { type: 'result', session_id: 'test-session' };
       });
 
       for await (const _ of client.sendQuery('test', '/tmp')) {
+        // consume
+      }
+
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const callArgs = mockQuery.mock.calls[0][0] as { options: Record<string, unknown> };
+      expect(callArgs.options.settingSources).toEqual(['project', 'user']);
+    });
+
+    test("honors explicit settingSources: ['project'] to opt out of user scope", async () => {
+      // Locks in the contract: setting settingSources: ['project'] in
+      // .archon/config.yaml must NOT be silently widened to the new default.
+      // A future refactor that drops the `?? ['project', 'user']` guard would
+      // expand skill/command/agent scope for every project-only deployment.
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'test-session' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/tmp', undefined, {
+        assistantConfig: { settingSources: ['project'] },
+      })) {
         // consume
       }
 
@@ -1164,5 +1237,216 @@ describe('sendQuery decomposition behaviors', () => {
       expect.objectContaining({ sessionId: 'sid-err', errorSubtype: 'max_turns' }),
       'claude.result_is_error'
     );
+  });
+
+  describe('inline agents (nodeConfig.agents)', () => {
+    test('passes inline agents map through to SDK options.agents', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'sid' };
+      });
+
+      const agents = {
+        'brief-gen': {
+          description: 'Summarises issues',
+          prompt: 'Be concise.',
+          model: 'haiku',
+          tools: ['Bash', 'Read'],
+        },
+      };
+
+      for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+        nodeConfig: { agents },
+      })) {
+        // consume
+      }
+
+      expect(mockQuery).toHaveBeenCalledTimes(1);
+      const callArgs = mockQuery.mock.calls[0][0] as { options: Record<string, unknown> };
+      expect(callArgs.options.agents).toMatchObject(agents);
+    });
+
+    test('does not set options.agent when only inline agents are present', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'sid' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+        nodeConfig: {
+          agents: {
+            'sub-a': { description: 'd', prompt: 'p' },
+          },
+        },
+      })) {
+        // consume
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0] as { options: Record<string, unknown> };
+      // agent (singular) is set by skills wrapper; inline-only must leave it unset
+      expect(callArgs.options.agent).toBeUndefined();
+    });
+
+    test('merges inline agents with skills wrapper; user wins on ID collision', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'sid' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+        nodeConfig: {
+          skills: ['my-skill'],
+          agents: {
+            // Intentionally collides with the internal 'dag-node-skills' wrapper ID
+            'dag-node-skills': {
+              description: 'user override',
+              prompt: 'user-defined prompt',
+            },
+            'extra-sub': { description: 'd', prompt: 'p' },
+          },
+        },
+      })) {
+        // consume
+      }
+
+      const callArgs = mockQuery.mock.calls[0][0] as { options: Record<string, unknown> };
+      const outAgents = callArgs.options.agents as Record<
+        string,
+        { description: string; prompt: string }
+      >;
+      // Both entries present
+      expect(Object.keys(outAgents).sort()).toEqual(['dag-node-skills', 'extra-sub']);
+      // User's definition wins the collision
+      expect(outAgents['dag-node-skills'].description).toBe('user override');
+      expect(outAgents['dag-node-skills'].prompt).toBe('user-defined prompt');
+    });
+
+    test('logs a warning when user-defined dag-node-skills overrides the skills wrapper', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'sid' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+        nodeConfig: {
+          skills: ['my-skill'],
+          agents: {
+            'dag-node-skills': { description: 'user override', prompt: 'p' },
+          },
+        },
+      })) {
+        // consume
+      }
+
+      expect(mockLogger.warn).toHaveBeenCalledWith(
+        expect.objectContaining({ nodeSkills: ['my-skill'] }),
+        'claude.inline_agents_override_skills_wrapper'
+      );
+    });
+
+    test('does NOT warn when inline agents do not collide with the skills wrapper', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield { type: 'result', session_id: 'sid' };
+      });
+
+      for await (const _ of client.sendQuery('test', '/workspace', undefined, {
+        nodeConfig: {
+          skills: ['my-skill'],
+          agents: {
+            'brief-gen': { description: 'd', prompt: 'p' },
+          },
+        },
+      })) {
+        // consume
+      }
+
+      const warnCalls = mockLogger.warn.mock.calls.filter(
+        (args: unknown[]) => args[1] === 'claude.inline_agents_override_skills_wrapper'
+      );
+      expect(warnCalls).toHaveLength(0);
+    });
+  });
+
+  describe('first-event timeout', () => {
+    const originalTimeoutEnv = process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
+
+    beforeEach(() => {
+      process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS = '50';
+    });
+
+    afterEach(() => {
+      if (originalTimeoutEnv === undefined) {
+        delete process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS;
+      } else {
+        process.env.ARCHON_CLAUDE_FIRST_EVENT_TIMEOUT_MS = originalTimeoutEnv;
+      }
+    });
+
+    test('throws a descriptive error when SDK never yields a first message', async () => {
+      // Generator that sleeps forever — simulates a hung subprocess
+      mockQuery.mockImplementation(async function* () {
+        await new Promise(() => {
+          // never resolves; the abortController.abort() inside the generator's
+          // internal loop is what actually unblocks it in production. For the
+          // test, we simulate that by awaiting a promise that rejects on abort.
+        });
+        // unreachable
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'x' }] } };
+      });
+
+      // The for-await loop in sendQuery() will be blocked on the generator's
+      // first `next()` call. The timeout fires, aborts the controller, and the
+      // SDK generator is expected to throw or return. Since our mock doesn't
+      // actually react to abort, we test that sendQuery() itself raises the
+      // descriptive timeout error. We use a very short timeout (50ms) to keep
+      // the test fast.
+      await expect(async () => {
+        for await (const _ of client.sendQuery('test', '/workspace')) {
+          // consume — should never produce any chunks
+        }
+      }).toThrow(/produced no output within/);
+
+      // The diagnostic dump should have been logged at error level
+      expect(mockLogger.error).toHaveBeenCalledWith(
+        expect.objectContaining({
+          timeoutMs: 50,
+          parentProcess: expect.objectContaining({
+            platform: process.platform,
+          }),
+        }),
+        'claude.first_event_timeout'
+      );
+    });
+
+    test('does not throw when SDK yields a message within the timeout', async () => {
+      mockQuery.mockImplementation(async function* () {
+        yield {
+          type: 'assistant',
+          message: { content: [{ type: 'text', text: 'fast response' }] },
+        };
+      });
+
+      const chunks = [];
+      for await (const chunk of client.sendQuery('test', '/workspace')) {
+        chunks.push(chunk);
+      }
+
+      expect(chunks).toHaveLength(1);
+      expect(chunks[0]).toEqual({ type: 'assistant', content: 'fast response' });
+      // The timeout should not have fired
+      expect(mockLogger.error).not.toHaveBeenCalledWith(
+        expect.anything(),
+        'claude.first_event_timeout'
+      );
+    });
+
+    test('the timeout error mentions issue #1067 for discoverability', async () => {
+      mockQuery.mockImplementation(async function* () {
+        await new Promise(() => {});
+        yield { type: 'assistant', message: { content: [{ type: 'text', text: 'x' }] } };
+      });
+
+      await expect(async () => {
+        for await (const _ of client.sendQuery('test', '/workspace')) {
+          // consume
+        }
+      }).toThrow(/coleam00\/Archon\/issues\/1067/);
+    });
   });
 });

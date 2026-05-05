@@ -36,6 +36,7 @@ import {
   getDefaultCommandsPath,
   getDefaultWorkflowsPath,
   getArchonWorkspacesPath,
+  getHomeCommandsPath,
   getRunArtifactsPath,
   getArchonHome,
   isDocker,
@@ -51,7 +52,7 @@ import {
   RESUMABLE_WORKFLOW_STATUSES,
   TERMINAL_WORKFLOW_STATUSES,
 } from '@archon/workflows/schemas/workflow-run';
-import type { ApprovalContext } from '@archon/workflows/schemas/workflow-run';
+import type { ApprovalContext, WorkflowRun } from '@archon/workflows/schemas/workflow-run';
 import { findMarkdownFilesRecursive } from '@archon/core/utils/commands';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
@@ -139,7 +140,7 @@ if (BUNDLED_IS_BINARY) {
   }
 }
 
-type WorkflowSource = 'project' | 'bundled';
+type WorkflowSource = 'project' | 'bundled' | 'global';
 
 // =========================================================================
 // OpenAPI route configs (module-scope — pure config, no runtime dependencies)
@@ -819,6 +820,7 @@ const getHealthRoute = createRoute({
               runningWorkflows: z.number(),
               version: z.string().optional(),
               is_docker: z.boolean(),
+              activePlatforms: z.array(z.string()).optional(),
             })
             .openapi('HealthResponse'),
         },
@@ -851,7 +853,8 @@ const getUpdateCheckRoute = createRoute({
 export function registerApiRoutes(
   app: OpenAPIHono,
   webAdapter: WebAdapter,
-  lockManager: ConversationLockManager
+  lockManager: ConversationLockManager,
+  activePlatforms?: readonly string[]
 ): void {
   function apiError(
     c: Context,
@@ -1030,6 +1033,95 @@ export function registerApiRoutes(
     }
 
     return { accepted: true, status: result.status };
+  }
+
+  /**
+   * Re-enter the orchestrator after a paused approval gate is resolved, so a
+   * web-dispatched workflow continues (approve) or runs its on_reject prompt
+   * (reject) without the user having to re-run the workflow command. The CLI's
+   * `workflowApproveCommand` / `workflowRejectCommand` already auto-resume via
+   * `workflowRunCommand({ resume: true })`; this is the web-side equivalent.
+   *
+   * Returns `true` when a resume dispatch was initiated, `false` otherwise (no
+   * parent conversation on the run, parent conversation deleted, parent was on
+   * a non-web platform, or dispatch threw). Failures are non-fatal: the gate
+   * decision is recorded regardless; when this returns `false` the response
+   * text instructs the user to re-run the workflow command.
+   *
+   * **Cross-adapter guard**: only web-sourced parents qualify.
+   * `dispatchToOrchestrator` is wired to the web adapter + its lock manager,
+   * so a Slack / Telegram / GitHub / Discord run being approved from the
+   * dashboard must not route through it — the Slack thread would never see
+   * the resumed output. Non-web parents skip auto-resume and the originating
+   * platform's own re-run flow applies.
+   */
+  async function tryAutoResumeAfterGate(
+    run: WorkflowRun,
+    action: 'approve' | 'reject'
+  ): Promise<boolean> {
+    if (!run.parent_conversation_id) return false;
+    // Literal event names per action — greppable for ops tooling. Keeping the
+    // branch explicit rather than templating avoids the earlier 3-segment
+    // `api.workflow_*.dispatched` shape that broke `{domain}.{action}_{state}`.
+    const events =
+      action === 'approve'
+        ? {
+            dispatched: 'api.workflow_approve_auto_resume_dispatched' as const,
+            skippedNoPlatformConv:
+              'api.workflow_approve_auto_resume_skipped_no_platform_conv' as const,
+            skippedNonWebParent: 'api.workflow_approve_auto_resume_skipped_non_web_parent' as const,
+            failed: 'api.workflow_approve_auto_resume_failed' as const,
+          }
+        : {
+            dispatched: 'api.workflow_reject_auto_resume_dispatched' as const,
+            skippedNoPlatformConv:
+              'api.workflow_reject_auto_resume_skipped_no_platform_conv' as const,
+            skippedNonWebParent: 'api.workflow_reject_auto_resume_skipped_non_web_parent' as const,
+            failed: 'api.workflow_reject_auto_resume_failed' as const,
+          };
+    try {
+      const parentConv = await conversationDb.getConversationById(run.parent_conversation_id);
+      const platformConvId = parentConv?.platform_conversation_id;
+      if (!platformConvId) {
+        // parentConv === null is a data-integrity signal (the parent
+        // conversation was deleted while the run was paused) — worth
+        // surfacing at info level so operators notice. Missing
+        // platform_conversation_id on an existing row shouldn't happen and
+        // stays at debug.
+        const logFn =
+          parentConv === null ? getLog().info.bind(getLog()) : getLog().debug.bind(getLog());
+        logFn(
+          {
+            runId: run.id,
+            parentConversationId: run.parent_conversation_id,
+            parentDeleted: parentConv === null,
+          },
+          events.skippedNoPlatformConv
+        );
+        return false;
+      }
+      if (parentConv.platform_type !== 'web') {
+        getLog().debug(
+          {
+            runId: run.id,
+            parentConversationId: run.parent_conversation_id,
+            platformType: parentConv.platform_type,
+          },
+          events.skippedNonWebParent
+        );
+        return false;
+      }
+      const resumeMessage = `/workflow run ${run.workflow_name} ${run.user_message ?? ''}`.trim();
+      await dispatchToOrchestrator(platformConvId, resumeMessage);
+      getLog().info(
+        { runId: run.id, workflowName: run.workflow_name, platformConvId },
+        events.dispatched
+      );
+      return true;
+    } catch (err) {
+      getLog().warn({ err: err as Error, runId: run.id }, events.failed);
+      return false;
+    }
   }
 
   // GET /api/conversations - List conversations
@@ -1863,37 +1955,77 @@ export function registerApiRoutes(
       if (!approval?.nodeId) {
         return apiError(c, 400, 'Workflow run is paused but missing approval context');
       }
-      // For interactive loops, do NOT write node_completed — the executor writes it when
-      // the AI emits the completion signal (actual loop exit). Writing it here would cause
-      // the resume to skip the loop node entirely via priorCompletedNodes.
-      if (approval.type !== 'interactive_loop') {
-        const nodeOutput = approval.captureResponse === true ? comment : '';
-        await workflowEventDb.createWorkflowEvent({
-          workflow_run_id: runId,
-          event_type: 'node_completed',
-          step_name: approval.nodeId,
-          data: { node_output: nodeOutput, approval_decision: 'approved' },
+      if (approval.type === 'interactive_loop') {
+        // Interactive loop path: store user input, keep status 'paused' so getPausedWorkflowRun
+        // finds it, then auto-dispatch to orchestrator to resume without requiring a manual message.
+        // Do NOT write node_completed — the executor writes it when the AI emits the completion signal.
+        await workflowDb.updateWorkflowRun(runId, {
+          metadata: { loop_user_input: comment },
+        });
+        // Auto-resume: inject the approval as a message into the parent conversation.
+        // The orchestrator's natural-language approval path writes approval_received and
+        // dispatches the resumed workflow.
+        const parentConvDbId = run.parent_conversation_id ?? run.conversation_id;
+        const parentConv = await conversationDb.getConversationById(parentConvDbId);
+        if (!parentConv?.platform_conversation_id) {
+          // Can't auto-dispatch — surface the failure so the user can resume manually.
+          getLog().error(
+            { runId, parentConvDbId, workflowName: run.workflow_name },
+            'api.workflow_run_approve_interactive_loop_no_parent_conv'
+          );
+          return apiError(
+            c,
+            500,
+            'Workflow approved but could not auto-resume: parent conversation not found. ' +
+              'Send a message to continue the workflow.'
+          );
+        }
+        void dispatchToOrchestrator(parentConv.platform_conversation_id, comment).catch(err => {
+          getLog().error(
+            { err, runId },
+            'api.workflow_run_approve_interactive_loop_dispatch_failed'
+          );
+        });
+        return c.json({
+          success: true,
+          message: `Workflow approved and resuming: ${run.workflow_name}.`,
         });
       }
+      // Standard approval path: write events, transition to 'failed' so
+      // findResumableRunByParentConversation picks it up, then auto-resume.
+      const nodeOutput = approval.captureResponse === true ? comment : '';
+      await workflowEventDb.createWorkflowEvent({
+        workflow_run_id: runId,
+        event_type: 'node_completed',
+        step_name: approval.nodeId,
+        data: { node_output: nodeOutput, approval_decision: 'approved' },
+      });
       await workflowEventDb.createWorkflowEvent({
         workflow_run_id: runId,
         event_type: 'approval_received',
         step_name: approval.nodeId,
         data: { decision: 'approved', comment },
       });
-      // For interactive loops, store user input; for standard approvals, mark as approved
-      // and clear any rejection state.
-      const metadataUpdate =
-        approval.type === 'interactive_loop'
-          ? { loop_user_input: comment }
-          : { approval_response: 'approved', rejection_reason: '', rejection_count: 0 };
+      // Transition to 'failed' so findResumableRunByParentConversation picks it up.
+      // Clear any prior rejection state.
       await workflowDb.updateWorkflowRun(runId, {
         status: 'failed',
-        metadata: metadataUpdate,
+        metadata: { approval_response: 'approved', rejection_reason: '', rejection_count: 0 },
       });
+
+      // Auto-resume: dispatch to the orchestrator so the workflow continues
+      // without requiring the user to re-run the workflow command. Mirrors
+      // what `workflowApproveCommand` does in the CLI. Requires
+      // `parent_conversation_id` on the run (set by orchestrator-agent for any
+      // web-dispatched workflow — foreground, interactive, and background via
+      // the pre-created run) and a web-platform parent (guarded in the helper).
+      const autoResumed = await tryAutoResumeAfterGate(run, 'approve');
+
       return c.json({
         success: true,
-        message: `Workflow approved: ${run.workflow_name}. Send a message to continue the workflow.`,
+        message: autoResumed
+          ? `Workflow approved: ${run.workflow_name}. Resuming workflow.`
+          : `Workflow approved: ${run.workflow_name}. Send a message to continue.`,
       });
     } catch (error) {
       getLog().error({ err: error, runId }, 'api.workflow_run_approve_failed');
@@ -1937,9 +2069,18 @@ export function registerApiRoutes(
           status: 'failed',
           metadata: { rejection_reason: reason, rejection_count: currentCount + 1 },
         });
+
+        // Auto-resume: dispatch to the orchestrator so the on_reject prompt runs
+        // without requiring the user to re-run the workflow command. Mirrors
+        // what `workflowRejectCommand` does in the CLI. Same cross-adapter
+        // guard as approve — only web parents auto-resume.
+        const autoResumed = await tryAutoResumeAfterGate(run, 'reject');
+
         return c.json({
           success: true,
-          message: `Workflow rejected: ${run.workflow_name}. On-reject prompt will run on resume.`,
+          message: autoResumed
+            ? `Workflow rejected: ${run.workflow_name}. Running on-reject prompt.`
+            : `Workflow rejected: ${run.workflow_name}. On-reject prompt will run on resume.`,
         });
       }
 
@@ -2298,7 +2439,7 @@ export function registerApiRoutes(
         if (codebases.length > 0) workingDir = codebases[0].default_cwd;
       }
 
-      // Collect commands: project-defined override bundled (same name wins)
+      // Collect commands: precedence bundled < global < project (repo-defined wins).
       const commandMap = new Map<string, WorkflowSource>();
 
       // 1. Seed with bundled defaults
@@ -2306,11 +2447,17 @@ export function registerApiRoutes(
         commandMap.set(name, 'bundled');
       }
 
+      // maxDepth: 1 matches the executor's resolver (resolveCommand /
+      // loadCommandPrompt) — without this cap, the UI palette would surface
+      // commands buried in deep subfolders that the executor silently can't
+      // resolve at runtime.
+      const COMMAND_LIST_DEPTH = { maxDepth: 1 };
+
       // 2. If not binary build, also check filesystem defaults
       if (!isBinaryBuild()) {
         try {
           const defaultsPath = getDefaultCommandsPath();
-          const files = await findMarkdownFilesRecursive(defaultsPath);
+          const files = await findMarkdownFilesRecursive(defaultsPath, '', COMMAND_LIST_DEPTH);
           for (const { commandName } of files) {
             commandMap.set(commandName, 'bundled');
           }
@@ -2322,13 +2469,27 @@ export function registerApiRoutes(
         }
       }
 
-      // 3. Project-defined commands override bundled
+      // 3. Home-scoped commands (~/.archon/commands/) override bundled
+      try {
+        const homeCommandsPath = getHomeCommandsPath();
+        const files = await findMarkdownFilesRecursive(homeCommandsPath, '', COMMAND_LIST_DEPTH);
+        for (const { commandName } of files) {
+          commandMap.set(commandName, 'global');
+        }
+      } catch (err) {
+        if ((err as NodeJS.ErrnoException).code !== 'ENOENT') {
+          getLog().error({ err }, 'commands.list_home_failed');
+        }
+        // ENOENT: home commands dir not created yet — not an error
+      }
+
+      // 4. Project-defined commands override bundled AND global
       if (workingDir) {
         const searchPaths = getCommandFolderSearchPaths();
         for (const folder of searchPaths) {
           const dirPath = join(workingDir, folder);
           try {
-            const files = await findMarkdownFilesRecursive(dirPath);
+            const files = await findMarkdownFilesRecursive(dirPath, '', COMMAND_LIST_DEPTH);
             for (const { commandName } of files) {
               commandMap.set(commandName, 'project');
             }
@@ -2548,6 +2709,7 @@ export function registerApiRoutes(
       runningWorkflows: runningWorkflowRows.length,
       version: appVersion,
       is_docker: isDocker(),
+      activePlatforms: activePlatforms ? [...activePlatforms] : ['Web'],
     });
   });
 

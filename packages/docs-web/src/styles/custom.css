@@ -11,16 +11,29 @@
   --sl-color-bg-sidebar: #131825;
   --sl-color-bg-nav: #0f1219;
   --sl-color-hairline-light: #1e293b;
+  --sl-color-hairline: rgba(255, 255, 255, 0.12);
 }
 
-/* !important needed: Starlight sets .hero padding/gap via inline styles */
+/* Hero spacing — !important needed: Starlight sets .hero padding/gap via inline styles */
 .hero {
   padding-block: 2rem !important;
   gap: 1rem !important;
 }
 
-/* .sidebar-content is an internal Starlight class (not a public API) — re-test after Starlight upgrades */
-[data-theme='dark'] .sidebar-content a[aria-current='page'] {
+/* Tighten gap between hero and first content */
+.sl-markdown-content > :first-child {
+  margin-top: 1.5rem;
+}
+
+/* Sidebar active-page gradient accent */
+[data-theme='dark'] nav a[aria-current='page'] {
   background: linear-gradient(135deg, rgba(168, 85, 247, 0.15), rgba(59, 130, 246, 0.15));
-  border-left-color: #a855f7;
+  border-left: 2px solid;
+  border-image: linear-gradient(180deg, #a855f7, #3b82f6) 1;
+}
+
+/* Feature card styling in dark mode */
+[data-theme='dark'] .card {
+  background: rgba(255, 255, 255, 0.03);
+  border: 1px solid rgba(255, 255, 255, 0.08);
 }

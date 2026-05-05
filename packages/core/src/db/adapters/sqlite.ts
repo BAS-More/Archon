@@ -178,6 +178,9 @@ export class SqliteAdapter implements IDatabase {
       if (!colNames.has('hidden')) {
         this.db.run('ALTER TABLE remote_agent_conversations ADD COLUMN hidden INTEGER DEFAULT 0');
       }
+      if (!colNames.has('context_summary')) {
+        this.db.run('ALTER TABLE remote_agent_conversations ADD COLUMN context_summary TEXT');
+      }
     } catch (e: unknown) {
       getLog().warn({ err: e as Error }, 'db.sqlite_migration_conversations_columns_failed');
     }
@@ -214,6 +217,20 @@ export class SqliteAdapter implements IDatabase {
       }
     } catch (e: unknown) {
       getLog().warn({ err: e as Error }, 'db.sqlite_migration_session_columns_failed');
+    }
+
+    // Codebases columns
+    try {
+      const codebaseCols = this.db.prepare("PRAGMA table_info('remote_agent_codebases')").all() as {
+        name: string;
+      }[];
+      const codebaseColNames = new Set(codebaseCols.map(c => c.name));
+
+      if (!codebaseColNames.has('default_branch')) {
+        this.db.run('ALTER TABLE remote_agent_codebases ADD COLUMN default_branch TEXT');
+      }
+    } catch (e: unknown) {
+      getLog().warn({ err: e as Error }, 'db.sqlite_migration_codebases_columns_failed');
     }
   }
 
@@ -264,6 +281,7 @@ export class SqliteAdapter implements IDatabase {
         title TEXT,
         deleted_at TEXT,
         hidden INTEGER DEFAULT 0,
+        context_summary TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now')),
         last_activity_at TEXT DEFAULT (datetime('now')),
