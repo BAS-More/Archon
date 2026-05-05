@@ -80,7 +80,6 @@ export interface ProviderInfo {
   builtIn: boolean;
 }
 
-<<<<<<< HEAD
 export type ProviderDefaults = Record<string, unknown>;
 
 export interface SafeConfigResponse {
@@ -107,8 +106,6 @@ export interface UpdateAssistantConfigBody {
   assistants?: Record<string, ProviderDefaults>;
 }
 
-=======
->>>>>>> 0d53a4ff (feat: replace hardcoded provider factory with typed registry system)
 export async function listProviders(): Promise<ProviderInfo[]> {
   const data = await fetchJSON<{ providers: ProviderInfo[] }>('/api/providers');
   return data.providers;
