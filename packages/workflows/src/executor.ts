@@ -13,8 +13,8 @@ import { executeDagWorkflow } from './dag-executor';
 import { logWorkflowStart, logWorkflowError } from './logger';
 import { formatDuration, parseDbTimestamp } from './utils/duration';
 import { getWorkflowEventEmitter } from './event-emitter';
-import { getRegisteredProviders } from '@archon/providers';
-import { inferProviderFromModel, isModelCompatible } from './model-validation';
+import { getRegisteredProviders, isRegisteredProvider } from '@archon/providers';
+import { inferProviderFromModel } from './model-validation';
 import { classifyError } from './executor-shared';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
@@ -297,7 +297,7 @@ export async function executeWorkflow(
     config.assistants as Record<string, Record<string, unknown> | undefined>
   )[resolvedProvider];
   const resolvedModel = workflow.model ?? (assistantDefaults?.model as string | undefined);
-  if (!isModelCompatible(resolvedProvider, resolvedModel)) {
+  if (!isRegisteredProvider(resolvedProvider)) {
     throw new Error(
       `Workflow '${workflow.name}': unknown provider '${resolvedProvider}'. ` +
         `Registered: ${getRegisteredProviders()
