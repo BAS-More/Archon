@@ -1,8 +1,8 @@
 /**
- * Telegram platform adapter using Telegraf SDK
+ * Telegram platform adapter using grammY SDK
  * Handles message sending with 4096 character limit splitting
  */
-import { Telegraf, Context } from 'telegraf';
+import { Bot, Context } from 'grammy';
 import type { IPlatformAdapter, MessageMetadata } from '@archon/core';
 import { createLogger } from '@archon/paths';
 import { parseAllowedUserIds, isUserAuthorized } from './auth';
@@ -20,17 +20,14 @@ function getLog(): ReturnType<typeof createLogger> {
 const MAX_LENGTH = 4096;
 
 export class TelegramAdapter implements IPlatformAdapter {
-  private bot: Telegraf;
+  private bot: Bot;
   private streamingMode: 'stream' | 'batch';
   private allowedUserIds: number[];
   private messageHandler: ((ctx: TelegramMessageContext) => Promise<void>) | null = null;
 
   constructor(token: string, mode: 'stream' | 'batch' = 'stream') {
-    // Disable handler timeout to support long-running AI operations
-    // Default is 90 seconds which is too short for complex coding tasks
-    this.bot = new Telegraf(token, {
-      handlerTimeout: Infinity,
-    });
+    // grammY does not impose a handler timeout by default (unlike Telegraf's 90s limit)
+    this.bot = new Bot(token);
     this.streamingMode = mode;
 
     // Parse Telegram user whitelist (optional - empty = open access)
@@ -55,55 +52,86 @@ export class TelegramAdapter implements IPlatformAdapter {
    * - Short messages (≤4096 chars): Convert to MarkdownV2 for nice formatting
    * - Long messages: Split by paragraphs, format each chunk independently
    *   (paragraphs rarely have formatting that spans across them)
+   *
+   * Forum topic support:
+   * - If chatId contains ":" (e.g. "-100123456:789"), the second part is the
+   *   message_thread_id and replies go to that specific forum topic.
    */
   async sendMessage(chatId: string, message: string, _metadata?: MessageMetadata): Promise<void> {
-    const id = parseInt(chatId);
-    getLog().debug({ chatId, messageLength: message.length }, 'telegram.send_message');
+    const { numericChatId, threadId } = this.parseChatId(chatId);
+    getLog().debug({ chatId, threadId, messageLength: message.length }, 'telegram.send_message');
 
     if (message.length <= MAX_LENGTH) {
-      // Short message: try MarkdownV2 formatting
-      await this.sendFormattedChunk(id, message);
+      await this.sendFormattedChunk(numericChatId, message, threadId);
     } else {
-      // Long message: split by paragraphs, format each chunk
       getLog().debug({ messageLength: message.length }, 'telegram.message_splitting');
       const chunks = splitIntoParagraphChunks(message, MAX_LENGTH - 200);
 
       for (const chunk of chunks) {
-        await this.sendFormattedChunk(id, chunk);
+        await this.sendFormattedChunk(numericChatId, chunk, threadId);
       }
     }
   }
 
   /**
-   * Send a single chunk with MarkdownV2 formatting, with fallback to plain text
+   * Parse a chatId that may contain a forum topic thread ID.
+   * Format: "chatId" or "chatId:threadId"
    */
-  private async sendFormattedChunk(id: number, chunk: string): Promise<void> {
+  private parseChatId(chatId: string): { numericChatId: number; threadId: number | undefined } {
+    const parts = chatId.split(':');
+    return {
+      numericChatId: parseInt(parts[0]),
+      threadId: parts[1] ? parseInt(parts[1]) : undefined,
+    };
+  }
+
+  /**
+   * Send a single chunk with MarkdownV2 formatting, with fallback to plain text.
+   * If threadId is provided, sends to that forum topic.
+   */
+  private async sendFormattedChunk(id: number, chunk: string, threadId?: number): Promise<void> {
+    // Build options: include thread ID only when targeting a forum topic
+    const threadExtra = threadId ? { message_thread_id: threadId } : undefined;
+
     // If chunk is still too long after paragraph splitting, fall back to plain text
     if (chunk.length > MAX_LENGTH) {
       getLog().debug({ chunkLength: chunk.length }, 'telegram.chunk_too_long_plain_text');
       const plainText = stripMarkdown(chunk);
-      // Split by lines if still too long
       const lines = plainText.split('\n');
       let subChunk = '';
       for (const line of lines) {
         if (subChunk.length + line.length + 1 > MAX_LENGTH - 100) {
-          if (subChunk) await this.bot.telegram.sendMessage(id, subChunk);
+          if (subChunk) {
+            if (threadExtra) {
+              await this.bot.api.sendMessage(id, subChunk, threadExtra);
+            } else {
+              await this.bot.api.sendMessage(id, subChunk);
+            }
+          }
           subChunk = line;
         } else {
           subChunk += (subChunk ? '\n' : '') + line;
         }
       }
-      if (subChunk) await this.bot.telegram.sendMessage(id, subChunk);
+      if (subChunk) {
+        if (threadExtra) {
+          await this.bot.api.sendMessage(id, subChunk, threadExtra);
+        } else {
+          await this.bot.api.sendMessage(id, subChunk);
+        }
+      }
       return;
     }
 
     // Try MarkdownV2 formatting
     const formatted = convertToTelegramMarkdown(chunk);
+    const markdownOptions = threadExtra
+      ? { parse_mode: 'MarkdownV2' as const, ...threadExtra }
+      : { parse_mode: 'MarkdownV2' as const };
     try {
-      await this.bot.telegram.sendMessage(id, formatted, { parse_mode: 'MarkdownV2' });
-      getLog().debug({ chunkLength: chunk.length }, 'telegram.markdownv2_chunk_sent');
+      await this.bot.api.sendMessage(id, formatted, markdownOptions);
+      getLog().debug({ chunkLength: chunk.length, threadId }, 'telegram.markdownv2_chunk_sent');
     } catch (error) {
-      // Fallback to stripped plain text for this chunk
       const err = error as Error;
       getLog().warn(
         {
@@ -113,14 +141,18 @@ export class TelegramAdapter implements IPlatformAdapter {
         },
         'telegram.markdownv2_failed'
       );
-      await this.bot.telegram.sendMessage(id, stripMarkdown(chunk));
+      if (threadExtra) {
+        await this.bot.api.sendMessage(id, stripMarkdown(chunk), threadExtra);
+      } else {
+        await this.bot.api.sendMessage(id, stripMarkdown(chunk));
+      }
     }
   }
 
   /**
-   * Get the Telegraf bot instance
+   * Get the grammY bot instance
    */
-  getBot(): Telegraf {
+  getBot(): Bot {
     return this.bot;
   }
 
@@ -139,18 +171,29 @@ export class TelegramAdapter implements IPlatformAdapter {
   }
 
   /**
-   * Extract conversation ID from Telegram context
+   * Extract conversation ID from Telegram context.
+   * For forum topics (supergroups with topics enabled), includes the thread ID
+   * so each topic gets its own conversation: "chatId:threadId".
+   * For regular chats/groups, returns just the chat ID.
    */
   getConversationId(ctx: Context): string {
     if (!ctx.chat) {
       throw new Error('No chat in context');
     }
-    return ctx.chat.id.toString();
+    const chatId = ctx.chat.id.toString();
+
+    // Check for forum topic (message_thread_id present on topic messages)
+    const msg = ctx.message;
+    if (msg && 'message_thread_id' in msg && msg.message_thread_id) {
+      return `${chatId}:${msg.message_thread_id}`;
+    }
+
+    return chatId;
   }
 
   /**
    * Ensure responses go to a thread.
-   * Telegram doesn't have threads - each chat is a persistent conversation.
+   * For forum topics, the thread is already encoded in the conversation ID.
    * Returns original conversation ID unchanged.
    */
   async ensureThread(originalConversationId: string, _messageContext?: unknown): Promise<string> {
@@ -171,25 +214,38 @@ export class TelegramAdapter implements IPlatformAdapter {
    */
   async start(options?: { retryDelayMs?: number }): Promise<void> {
     // Register message handler before launch
-    this.bot.on('message', ctx => {
-      if (!('text' in ctx.message)) return;
-
+    this.bot.on('message:text', ctx => {
       const message = ctx.message.text;
       if (!message) return;
 
       // Authorization check - verify sender is in whitelist
-      const userId = ctx.from.id;
+      const userId = ctx.from?.id;
       if (!isUserAuthorized(userId, this.allowedUserIds)) {
         // Log unauthorized attempt (mask user ID for privacy)
-        const maskedId = `${String(userId).slice(0, 4)}***`;
+        const maskedId = userId !== undefined ? `${String(userId).slice(0, 4)}***` : 'unknown';
         getLog().info({ maskedUserId: maskedId }, 'telegram.unauthorized_message');
         return; // Silent rejection
       }
 
       if (this.messageHandler) {
         const conversationId = this.getConversationId(ctx);
+        // Debug: log forum topic detection
+        const msg = ctx.message;
+        const threadId =
+          'message_thread_id' in msg
+            ? (msg as { message_thread_id?: number }).message_thread_id
+            : undefined;
+        getLog().info(
+          { chatId: ctx.chat?.id, threadId, conversationId, chatType: ctx.chat?.type },
+          'telegram.message_received'
+        );
         // Fire-and-forget - errors handled by caller
         void this.messageHandler({ conversationId, message, userId });
+      } else {
+        // Intentional: message dropped silently if handler not registered yet.
+        // In production the server always calls onMessage() before start(); this
+        // path only surfaces during development or misconfiguration.
+        getLog().debug({ chatId: ctx.chat?.id }, 'telegram.message_dropped_no_handler');
       }
     });
 
@@ -200,9 +256,26 @@ export class TelegramAdapter implements IPlatformAdapter {
     const RETRY_DELAY_MS = options?.retryDelayMs ?? 60_000;
     for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
       try {
-        // dropPendingUpdates: true — discard queued messages from while the bot was offline
+        // drop_pending_updates: true — discard queued messages from while the bot was offline
         // to avoid reprocessing stale commands after a container restart.
-        await this.bot.launch({ dropPendingUpdates: true });
+        // grammY's start() resolves only when the bot stops; use onStart callback to detect
+        // successful launch and return immediately while the bot continues running in background.
+        await new Promise<void>((resolve, reject) => {
+          this.bot
+            .start({
+              drop_pending_updates: true,
+              onStart: () => {
+                resolve();
+              },
+            })
+            .catch((err: unknown) => {
+              const error = err instanceof Error ? err : new Error(String(err));
+              // Log post-startup crashes — after onStart fires the reject() below is a no-op
+              // (Promise already settled), but the error should still be observable in logs.
+              getLog().error({ err: error }, 'telegram.bot_runtime_error');
+              reject(error);
+            });
+        });
         getLog().info('telegram.bot_started');
         return;
       } catch (err) {

@@ -21,6 +21,7 @@ import * as workflowDiscovery from '@archon/workflows/workflow-discovery';
 // Create mock functions for database modules (safe to mock - no standalone tests)
 const mockUpdateConversation = mock(() => Promise.resolve());
 const mockGetCodebase = mock(() => Promise.resolve(null));
+const mockListCodebases = mock(() => Promise.resolve([]));
 const mockFindCodebaseByDefaultCwd = mock(() => Promise.resolve(null));
 const mockCreateCodebase = mock(() => Promise.resolve(null));
 const mockGetCodebaseCommands = mock(() => Promise.resolve({}));
@@ -68,6 +69,7 @@ mock.module('../db/conversations', () => ({
 
 mock.module('../db/codebases', () => ({
   getCodebase: mockGetCodebase,
+  listCodebases: mockListCodebases,
   findCodebaseByDefaultCwd: mockFindCodebaseByDefaultCwd,
   createCodebase: mockCreateCodebase,
   getCodebaseCommands: mockGetCodebaseCommands,
@@ -511,7 +513,6 @@ describe('CommandHandler', () => {
           repository_url: 'https://github.com/user/my-repo',
           default_cwd: '/workspace/my-repo',
           ai_assistant_type: 'claude',
-          allow_env_keys: false,
           commands: {},
           created_at: new Date(),
           updated_at: new Date(),
@@ -567,7 +568,6 @@ describe('CommandHandler', () => {
           repository_url: 'https://github.com/owner/repo',
           default_cwd: '/workspace/repo',
           ai_assistant_type: 'claude',
-          allow_env_keys: false,
           commands: {},
           created_at: new Date(),
           updated_at: new Date(),
@@ -606,7 +606,6 @@ describe('CommandHandler', () => {
           repository_url: 'https://github.com/owner/orphaned-repo',
           default_cwd: '/workspace/orphaned-repo',
           ai_assistant_type: 'claude',
-          allow_env_keys: false,
           commands: {},
           created_at: new Date(),
           updated_at: new Date(),
@@ -721,7 +720,6 @@ describe('CommandHandler', () => {
           repository_url: 'https://github.com/user/my-repo',
           default_cwd: '/workspace/my-repo',
           ai_assistant_type: 'claude',
-          allow_env_keys: false,
           commands: {},
           created_at: new Date(),
           updated_at: new Date(),

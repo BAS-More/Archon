@@ -178,6 +178,9 @@ export class SqliteAdapter implements IDatabase {
       if (!colNames.has('hidden')) {
         this.db.run('ALTER TABLE remote_agent_conversations ADD COLUMN hidden INTEGER DEFAULT 0');
       }
+      if (!colNames.has('context_summary')) {
+        this.db.run('ALTER TABLE remote_agent_conversations ADD COLUMN context_summary TEXT');
+      }
     } catch (e: unknown) {
       getLog().warn({ err: e as Error }, 'db.sqlite_migration_conversations_columns_failed');
     }
@@ -215,22 +218,6 @@ export class SqliteAdapter implements IDatabase {
     } catch (e: unknown) {
       getLog().warn({ err: e as Error }, 'db.sqlite_migration_session_columns_failed');
     }
-
-    // Codebases columns (added in #983 — env-leak gate consent bit)
-    try {
-      const cbCols = this.db.prepare("PRAGMA table_info('remote_agent_codebases')").all() as {
-        name: string;
-      }[];
-      const cbColNames = new Set(cbCols.map(c => c.name));
-
-      if (!cbColNames.has('allow_env_keys')) {
-        this.db.run(
-          'ALTER TABLE remote_agent_codebases ADD COLUMN allow_env_keys INTEGER DEFAULT 0'
-        );
-      }
-    } catch (e: unknown) {
-      getLog().warn({ err: e as Error }, 'db.sqlite_migration_codebases_columns_failed');
-    }
   }
 
   /**
@@ -252,7 +239,6 @@ export class SqliteAdapter implements IDatabase {
         default_cwd TEXT NOT NULL,
         default_branch TEXT DEFAULT 'main',
         ai_assistant_type TEXT DEFAULT 'claude',
-        allow_env_keys INTEGER DEFAULT 0,
         commands TEXT DEFAULT '{}',
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now'))
@@ -281,6 +267,7 @@ export class SqliteAdapter implements IDatabase {
         title TEXT,
         deleted_at TEXT,
         hidden INTEGER DEFAULT 0,
+        context_summary TEXT,
         created_at TEXT DEFAULT (datetime('now')),
         updated_at TEXT DEFAULT (datetime('now')),
         last_activity_at TEXT DEFAULT (datetime('now')),
