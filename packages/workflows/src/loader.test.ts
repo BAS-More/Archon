@@ -41,7 +41,6 @@ describe('Workflow Loader', () => {
   let testDir: string;
 
   beforeEach(async () => {
-    // Create unique temp directory for each test
     testDir = await mkdtemp(join(tmpdir(), 'workflow-test-'));
   });
 
