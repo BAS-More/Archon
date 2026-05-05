@@ -4666,7 +4666,7 @@ describe('executeDagWorkflow -- terminal node output selection', () => {
       string,
       unknown
     >;
-    expect(nodeFailedData.error).toContain("unknown provider 'claud'");
+    expect(nodeFailedData.error).toContain("Unknown provider: 'claud'");
   });
 
   it('excludes intermediate nodes with dependents from terminal set (fan-in DAG)', async () => {

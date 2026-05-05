@@ -20,5 +20,6 @@ export function registerPiProvider(): void {
     factory: () => new PiProvider(),
     capabilities: PI_CAPABILITIES,
     builtIn: false,
+    isModelCompatible: () => true,
   });
 }

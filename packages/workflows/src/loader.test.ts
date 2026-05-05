@@ -28,7 +28,7 @@ mock.module('@archon/paths', () => ({
   createLogger: mock(() => mockLogger),
 }));
 
-// Bootstrap provider registry (needed by isRegisteredProvider checks at load time)
+// Bootstrap provider registry (needed by isModelCompatible in dag-node schema)
 import { registerBuiltinProviders, clearRegistry } from '@archon/providers';
 clearRegistry();
 registerBuiltinProviders();
@@ -339,11 +339,35 @@ nodes:
       await writeFile(join(workflowDir, 'test.yaml'), yamlInvalidProvider);
 
       const result = await discoverWorkflows(testDir, { loadDefaults: false });
+      const workflows = result.workflows.map(ws => ws.workflow);
+
+      // Unknown providers are accepted (validated against registry at execution time)
+      expect(workflows).toHaveLength(1);
+      expect(workflows[0].provider).toBe('claud');
+    });
+
+    it('should reject claude model with codex provider at load time', async () => {
+      const workflowDir = join(testDir, '.archon', 'workflows');
+      await mkdir(workflowDir, { recursive: true });
+
+      const invalidYaml = `name: invalid-model
+description: Invalid model/provider pairing
+provider: codex
+model: sonnet
+nodes:
+  - id: test
+    command: test
+`;
+      await writeFile(join(workflowDir, 'invalid.yaml'), invalidYaml);
+
+      const result = await discoverWorkflows(testDir, { loadDefaults: false });
 
       expect(result.workflows).toHaveLength(0);
       expect(result.errors).toHaveLength(1);
       expect(result.errors[0].errorType).toBe('validation_error');
-      expect(result.errors[0].error).toContain("Unknown provider 'claud'");
+      expect(result.errors[0].error).toContain(
+        "Model 'sonnet' is not compatible with provider 'codex'"
+      );
     });
 
     it('should accept any model string with a known provider (SDK validates at run time)', async () => {

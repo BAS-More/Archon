@@ -113,6 +113,8 @@ export function registerBuiltinProviders(): void {
       factory: () => new ClaudeProvider(),
       capabilities: CLAUDE_CAPABILITIES,
       builtIn: true,
+      isModelCompatible: (model: string) =>
+        model.startsWith('claude-') || !/^[a-z0-9]+-/.test(model),
     },
     {
       id: 'codex',
@@ -120,6 +122,7 @@ export function registerBuiltinProviders(): void {
       factory: () => new CodexProvider(),
       capabilities: CODEX_CAPABILITIES,
       builtIn: true,
+      isModelCompatible: (model: string) => /^(gpt-|codex-|o[0-9]+-|o[0-9]+$)/.test(model),
     },
   ];
 
