@@ -598,84 +598,6 @@ nodes:
     });
   });
 
-  describe('globalSearchPath loading', () => {
-    it('should load workflows from globalSearchPath and merge with local', async () => {
-      const globalDir = join(
-        tmpdir(),
-        `global-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      );
-      const globalWorkflowDir = join(globalDir, '.archon', 'workflows');
-      const localWorkflowDir = join(testDir, '.archon', 'workflows');
-
-      await mkdir(globalWorkflowDir, { recursive: true });
-      await mkdir(localWorkflowDir, { recursive: true });
-
-      await writeFile(
-        join(globalWorkflowDir, 'global-wf.yaml'),
-        'name: global-workflow\ndescription: From global\nnodes:\n  - id: foo\n    command: foo\n'
-      );
-      await writeFile(
-        join(localWorkflowDir, 'local-wf.yaml'),
-        'name: local-workflow\ndescription: From local\nnodes:\n  - id: bar\n    command: bar\n'
-      );
-
-      const result = await discoverWorkflows(testDir, {
-        loadDefaults: false,
-        globalSearchPath: globalDir,
-      });
-
-      const names = result.workflows.map(w => w.workflow.name);
-      expect(names).toContain('global-workflow');
-      expect(names).toContain('local-workflow');
-
-      await rm(globalDir, { recursive: true, force: true });
-    });
-
-    it('should allow local workflows to override global by filename', async () => {
-      const globalDir = join(
-        tmpdir(),
-        `global-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      );
-      const globalWorkflowDir = join(globalDir, '.archon', 'workflows');
-      const localWorkflowDir = join(testDir, '.archon', 'workflows');
-
-      await mkdir(globalWorkflowDir, { recursive: true });
-      await mkdir(localWorkflowDir, { recursive: true });
-
-      await writeFile(
-        join(globalWorkflowDir, 'shared.yaml'),
-        'name: global-version\ndescription: Global version\nnodes:\n  - id: global\n    command: global\n'
-      );
-      await writeFile(
-        join(localWorkflowDir, 'shared.yaml'),
-        'name: local-version\ndescription: Local override\nnodes:\n  - id: local\n    command: local\n'
-      );
-
-      const result = await discoverWorkflows(testDir, {
-        loadDefaults: false,
-        globalSearchPath: globalDir,
-      });
-
-      // Local should override global by filename
-      const shared = result.workflows.find(
-        w => w.workflow.name === 'global-version' || w.workflow.name === 'local-version'
-      );
-      expect(shared?.workflow.name).toBe('local-version');
-
-      await rm(globalDir, { recursive: true, force: true });
-    });
-
-    it('should handle missing globalSearchPath gracefully', async () => {
-      const result = await discoverWorkflows(testDir, {
-        loadDefaults: false,
-        globalSearchPath: '/nonexistent/path',
-      });
-
-      // Should not throw, just return whatever local workflows exist
-      expect(result.errors).toEqual([]);
-    });
-  });
-
   describe('discoverWorkflowsWithConfig', () => {
     it('should pass loadDefaults from config to discoverWorkflows', async () => {
       const { discoverWorkflowsWithConfig } = await import('./workflow-discovery');
@@ -702,33 +624,6 @@ nodes:
       // With config failure, defaults to true, so archon-* should appear
       const archonWorkflow = result.workflows.find(w => w.workflow.name === 'archon-assist');
       expect(archonWorkflow).toBeDefined();
-    });
-
-    it('should pass globalSearchPath through to discoverWorkflows', async () => {
-      const { discoverWorkflowsWithConfig } = await import('./workflow-discovery');
-      const globalDir = join(
-        tmpdir(),
-        `global-test-${Date.now()}-${Math.random().toString(36).slice(2)}`
-      );
-      const globalWorkflowDir = join(globalDir, '.archon', 'workflows');
-      await mkdir(globalWorkflowDir, { recursive: true });
-      await writeFile(
-        join(globalWorkflowDir, 'global-only.yaml'),
-        'name: global-only\ndescription: From global\nnodes:\n  - id: foo\n    command: foo\n'
-      );
-
-      const mockLoadConfig = mock(async () => ({
-        defaults: { loadDefaultWorkflows: false },
-      }));
-
-      const result = await discoverWorkflowsWithConfig(testDir, mockLoadConfig, {
-        globalSearchPath: globalDir,
-      });
-
-      const names = result.workflows.map(w => w.workflow.name);
-      expect(names).toContain('global-only');
-
-      await rm(globalDir, { recursive: true, force: true });
     });
   });
 

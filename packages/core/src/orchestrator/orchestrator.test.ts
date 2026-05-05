@@ -12,7 +12,6 @@ const mockLogger = createMockLogger();
 mock.module('@archon/paths', () => ({
   createLogger: mock(() => mockLogger),
   getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
-  getArchonHome: mock(() => '/home/test/.archon'),
 }));
 
 // DB mocks
@@ -555,8 +554,7 @@ describe('orchestrator-agent handleMessage', () => {
 
       expect(mockDiscoverWorkflows).toHaveBeenCalledWith(
         '/workspace/test-project',
-        expect.any(Function),
-        { globalSearchPath: expect.any(String) }
+        expect.any(Function)
       );
       expect(platform.sendMessage).toHaveBeenCalledWith(
         'chat-456',
@@ -1156,8 +1154,7 @@ describe('orchestrator-agent handleMessage', () => {
 
       expect(mockDiscoverWorkflows).toHaveBeenCalledWith(
         '/home/test/.archon/workspaces',
-        expect.any(Function),
-        { globalSearchPath: '/home/test/.archon' }
+        expect.any(Function)
       );
     });
 

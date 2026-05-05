@@ -310,7 +310,7 @@ describe('workflowListCommand', () => {
     expect(consoleSpy).toHaveBeenCalledWith(expect.stringContaining('Found 1 workflow(s)'));
   });
 
-  it('passes globalSearchPath to discoverWorkflowsWithConfig', async () => {
+  it('calls discoverWorkflowsWithConfig with cwd and loadConfig', async () => {
     const { discoverWorkflowsWithConfig } = await import('@archon/workflows/workflow-discovery');
     (discoverWorkflowsWithConfig as ReturnType<typeof mock>).mockResolvedValueOnce({
       workflows: [],
@@ -319,11 +319,7 @@ describe('workflowListCommand', () => {
 
     await workflowListCommand('/test/path');
 
-    expect(discoverWorkflowsWithConfig).toHaveBeenCalledWith(
-      '/test/path',
-      expect.any(Function),
-      expect.objectContaining({ globalSearchPath: '/home/test/.archon' })
-    );
+    expect(discoverWorkflowsWithConfig).toHaveBeenCalledWith('/test/path', expect.any(Function));
   });
 
   it('should throw error when discoverWorkflows fails', async () => {

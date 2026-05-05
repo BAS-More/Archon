@@ -116,9 +116,7 @@ describe('GET /api/workflows', () => {
     expect(body.workflows[0]?.workflow.name).toBe('deploy');
     expect(body.workflows[0]?.source).toBe('bundled');
     expect(body.workflows.workflows).toBeUndefined();
-    expect(mockDiscoverWorkflows).toHaveBeenCalledWith('/tmp/project', expect.any(Function), {
-      globalSearchPath: expect.any(String),
-    });
+    expect(mockDiscoverWorkflows).toHaveBeenCalledWith('/tmp/project', expect.any(Function));
     expect(body.errors).toBeDefined();
     expect(Array.isArray(body.errors)).toBe(true);
   });

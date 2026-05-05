@@ -21,7 +21,6 @@ import type {
   ScriptValidationResult,
 } from '@archon/workflows/validator';
 import { loadConfig, loadRepoConfig } from '@archon/core';
-import { getArchonHome } from '@archon/paths';
 
 /**
  * Build ValidationConfig from the repo's .archon/config.yaml
@@ -90,8 +89,7 @@ export async function validateWorkflowsCommand(
   const defaultProvider = mergedConfig.assistant;
   const { workflows: workflowEntries, errors: loadErrors } = await discoverWorkflowsWithConfig(
     cwd,
-    loadConfig,
-    { globalSearchPath: getArchonHome() }
+    loadConfig
   );
 
   // Build results from load errors (Level 1-2 failures)

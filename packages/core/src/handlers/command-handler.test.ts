@@ -1041,14 +1041,8 @@ describe('CommandHandler', () => {
 
         await handleCommand(conversationWithCodebase, '/workflow list');
 
-        // Verify loadConfig function and globalSearchPath are passed
-        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(
-          expect.any(String),
-          expect.any(Function),
-          {
-            globalSearchPath: '/home/test/.archon',
-          }
-        );
+        // Verify loadConfig function is passed
+        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(expect.any(String), expect.any(Function));
       });
     });
 
@@ -1112,16 +1106,12 @@ describe('CommandHandler', () => {
         expect(result.message).not.toContain('failed to load');
       });
 
-      test('should pass globalSearchPath to discoverWorkflowsWithConfig on reload', async () => {
+      test('should call discoverWorkflowsWithConfig on reload', async () => {
         spyDiscoverWorkflows.mockResolvedValueOnce({ workflows: [], errors: [] });
 
         await handleCommand(conversationWithCodebase, '/workflow reload');
 
-        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(
-          expect.any(String),
-          expect.any(Function),
-          { globalSearchPath: '/home/test/.archon' }
-        );
+        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(expect.any(String), expect.any(Function));
       });
     });
 
@@ -1565,7 +1555,7 @@ describe('CommandHandler', () => {
         expect(result.message).toContain('/workflow list');
       });
 
-      test('should pass globalSearchPath to discoverWorkflowsWithConfig on run', async () => {
+      test('should call discoverWorkflowsWithConfig on run', async () => {
         spyDiscoverWorkflows.mockResolvedValueOnce({
           workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'test' })],
           errors: [],
@@ -1573,11 +1563,7 @@ describe('CommandHandler', () => {
 
         await handleCommand(conversationWithCodebase, '/workflow run nonexistent');
 
-        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(
-          expect.any(String),
-          expect.any(Function),
-          { globalSearchPath: '/home/test/.archon' }
-        );
+        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(expect.any(String), expect.any(Function));
       });
 
       test('should return error when workflow is not found', async () => {

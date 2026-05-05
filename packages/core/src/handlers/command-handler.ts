@@ -16,7 +16,7 @@ import {
   cleanupStaleWorktrees,
   getWorktreeStatusBreakdown,
 } from '../services/cleanup-service';
-import { getArchonWorkspacesPath, getArchonHome } from '@archon/paths';
+import { getArchonWorkspacesPath } from '@archon/paths';
 import { loadConfig } from '../config/config-loader';
 import { discoverWorkflowsWithConfig } from '@archon/workflows/workflow-discovery';
 import { resolveWorkflowName } from '@archon/workflows/router';
@@ -563,9 +563,7 @@ async function handleWorkflowCommand(
       let workflowEntries: readonly WorkflowWithSource[];
       let errors: readonly WorkflowLoadError[];
       try {
-        const result = await discoverWorkflowsWithConfig(workflowCwd, loadConfig, {
-          globalSearchPath: getArchonHome(),
-        });
+        const result = await discoverWorkflowsWithConfig(workflowCwd, loadConfig);
         workflowEntries = result.workflows;
         errors = result.errors;
       } catch (error) {
@@ -611,9 +609,7 @@ async function handleWorkflowCommand(
     case 'reload': {
       try {
         const { workflows: reloadedWorkflows, errors: reloadErrors } =
-          await discoverWorkflowsWithConfig(workflowCwd, loadConfig, {
-            globalSearchPath: getArchonHome(),
-          });
+          await discoverWorkflowsWithConfig(workflowCwd, loadConfig);
         let msg = `Discovered ${String(reloadedWorkflows.length)} workflow(s).`;
         if (reloadErrors.length > 0) {
           msg += `\n\n**${String(reloadErrors.length)} failed to load:**\n`;
@@ -807,9 +803,7 @@ async function handleWorkflowCommand(
       let workflowEntries: readonly WorkflowWithSource[];
       let loadErrors: readonly WorkflowLoadError[];
       try {
-        const result = await discoverWorkflowsWithConfig(workflowCwd, loadConfig, {
-          globalSearchPath: getArchonHome(),
-        });
+        const result = await discoverWorkflowsWithConfig(workflowCwd, loadConfig);
         workflowEntries = result.workflows;
         loadErrors = result.errors;
       } catch (error) {
