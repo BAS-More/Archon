@@ -800,7 +800,6 @@ async function handleWorkflowCommand(
         'cmd.workflow_run_invoked'
       );
 
-      // Discover workflows with error handling
       let workflowEntries: readonly WorkflowWithSource[];
       let loadErrors: readonly WorkflowLoadError[];
       try {

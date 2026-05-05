@@ -196,6 +196,7 @@ const mockLogger = createMockLogger();
 mock.module('@archon/paths', () => ({
   createLogger: mock(() => mockLogger),
   getArchonWorkspacesPath: mock(() => '/home/test/.archon/workspaces'),
+  getArchonHome: mock(() => '/home/test/.archon'),
   getCommandFolderSearchPaths: mock(() => ['.archon/commands']),
   expandTilde: mock((p: string) => p.replace(/^~/, '/home/test')),
   ensureProjectStructure: mock(() => Promise.resolve()),
@@ -1042,7 +1043,7 @@ describe('CommandHandler', () => {
 
         await handleCommand(conversationWithCodebase, '/workflow list');
 
-        // Verify loadConfig function is passed as the second argument
+        // Verify loadConfig function is passed
         expect(spyDiscoverWorkflows).toHaveBeenCalledWith(expect.any(String), expect.any(Function));
       });
     });
@@ -1105,6 +1106,14 @@ describe('CommandHandler', () => {
         expect(result.success).toBe(true);
         expect(result.message).toContain('Discovered 1 workflow(s)');
         expect(result.message).not.toContain('failed to load');
+      });
+
+      test('should call discoverWorkflowsWithConfig on reload', async () => {
+        spyDiscoverWorkflows.mockResolvedValueOnce({ workflows: [], errors: [] });
+
+        await handleCommand(conversationWithCodebase, '/workflow reload');
+
+        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(expect.any(String), expect.any(Function));
       });
     });
 
@@ -1546,6 +1555,17 @@ describe('CommandHandler', () => {
         expect(result.success).toBe(false);
         expect(result.message).toContain('Usage: /workflow run <name>');
         expect(result.message).toContain('/workflow list');
+      });
+
+      test('should call discoverWorkflowsWithConfig on run', async () => {
+        spyDiscoverWorkflows.mockResolvedValueOnce({
+          workflows: [makeTestWorkflowWithSource({ name: 'assist', description: 'test' })],
+          errors: [],
+        });
+
+        await handleCommand(conversationWithCodebase, '/workflow run nonexistent');
+
+        expect(spyDiscoverWorkflows).toHaveBeenCalledWith(expect.any(String), expect.any(Function));
       });
 
       test('should return error when workflow is not found', async () => {
