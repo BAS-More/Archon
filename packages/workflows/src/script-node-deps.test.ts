@@ -287,7 +287,7 @@ describe('script node deps field — command construction', () => {
     expect(args).toEqual(['run', 'python', '-c', 'print("no deps")']);
   });
 
-  it('bun inline with deps uses bun --no-env-file -e (no extra dep flags — bun auto-installs)', async () => {
+  it('bun inline with deps runs a temp file with no dep flags — bun auto-installs', async () => {
     const node: ScriptNode = {
       id: 'bun-with-deps',
       script: 'import { z } from "zod"; console.log(z.string().parse("hello"))',
@@ -316,13 +316,22 @@ describe('script node deps field — command construction', () => {
     expect(scriptCall).toBeDefined();
     const [cmd, args] = scriptCall as [string, string[]];
     expect(cmd).toBe('bun');
-    // --no-env-file prevents repo .env auto-load; no dep flags — bun auto-installs
-    expect(args).toEqual(['--no-env-file', '-e', node.script]);
+    // --no-env-file prevents repo .env auto-load; no dep flags — bun auto-installs.
+    // Inline scripts run from a temp file rather than `-e`: on Windows `bun -e` silently
+    // swallowed both failures and stdout for any multi-line script (see dag-executor.ts).
+    expect(args[0]).toBe('--no-env-file');
+    expect(args[1]).toBe('run');
+    expect(args[2]).toMatch(/node\.ts$/);
+    expect(args).toHaveLength(3);
+    expect(args).not.toContain('-e');
     expect(args).not.toContain('--packages');
     expect(args).not.toContain('--with');
+    // The declared deps must not leak into argv — that is this test's actual subject.
+    expect(args).not.toContain('zod');
+    expect(args).not.toContain('node-fetch');
   });
 
-  it('bun inline without deps uses bun --no-env-file -e', async () => {
+  it('bun inline without deps runs a temp file under --no-env-file', async () => {
     const node: ScriptNode = {
       id: 'bun-no-deps',
       script: 'console.log("hello")',
@@ -350,7 +359,11 @@ describe('script node deps field — command construction', () => {
     expect(scriptCall).toBeDefined();
     const [cmd, args] = scriptCall as [string, string[]];
     expect(cmd).toBe('bun');
-    expect(args).toEqual(['--no-env-file', '-e', 'console.log("hello")']);
+    expect(args[0]).toBe('--no-env-file');
+    expect(args[1]).toBe('run');
+    expect(args[2]).toMatch(/node\.ts$/);
+    expect(args).toHaveLength(3);
+    expect(args).not.toContain('-e');
   });
 
   it('uv named script with deps uses uv run --with flags', async () => {

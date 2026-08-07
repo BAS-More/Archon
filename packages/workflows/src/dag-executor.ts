@@ -5,8 +5,9 @@
  * Independent nodes within the same layer run concurrently via Promise.allSettled.
  * Captures all assistant output regardless of streaming mode for $node_id.output substitution.
  */
-import { readFile } from 'fs/promises';
-import { isAbsolute, resolve as resolvePath } from 'path';
+import { readFile, writeFile, rm, mkdtemp } from 'fs/promises';
+import { tmpdir } from 'os';
+import { isAbsolute, join as joinPath, resolve as resolvePath } from 'path';
 import { execFileAsync } from '@archon/git';
 import { discoverScriptsForCwd } from './script-discovery';
 import type {
@@ -1489,6 +1490,8 @@ async function executeScriptNode(
   // Build the command and args based on runtime and inline vs named
   let cmd = '';
   let args: string[] = [];
+  /** Temp dir holding an inline bun script; removed in the finally below. */
+  let inlineScriptDir: string | undefined;
 
   const nodeDeps = node.deps ?? [];
 
@@ -1497,10 +1500,26 @@ async function executeScriptNode(
       // Inline code execution
       if (node.runtime === 'bun') {
         cmd = 'bun';
-        // --no-env-file prevents Bun from auto-loading .env from the execution
-        // cwd (the target repo). Without this, repo .env leaks into the script
-        // subprocess despite Archon's parent process cleanup.
-        args = ['--no-env-file', '-e', finalScript];
+        // NOT `-e`. On Windows, `bun -e <script>` where the script contains a NEWLINE resolves
+        // with empty stdout AND empty stderr no matter what the script did — a failing script
+        // reports success, and a successful one yields no output for `$node.output` downstream.
+        // Verified directly against promisify(execFile) and specific to `bun -e`: `bash -c`,
+        // `node -e` and `python -c` all handle multi-line input correctly, and single-line
+        // `bun -e` is fine. Since almost every real script node has newlines, the common case
+        // was the broken one, and it failed silently in both directions.
+        //
+        // Writing to a temp file and running it sidesteps the argument path entirely and matches
+        // what the named-script branch below already does. The file lives in the OS temp dir, not
+        // the target repo, so a crash cannot leave artefacts in the user's checkout. It also
+        // measured faster than `-e` (737ms vs 2084ms for an equivalent script).
+        //
+        // --no-env-file still applies: it prevents Bun auto-loading .env from the execution cwd
+        // (the target repo), which would otherwise leak repo secrets into the script subprocess
+        // despite Archon's parent process cleanup.
+        inlineScriptDir = await mkdtemp(joinPath(tmpdir(), 'archon-script-'));
+        const scriptFile = joinPath(inlineScriptDir, 'node.ts');
+        await writeFile(scriptFile, finalScript, 'utf8');
+        args = ['--no-env-file', 'run', scriptFile];
       } else {
         // uv run --with dep1 --with dep2 python -c <code>
         cmd = 'uv';
@@ -1683,6 +1702,18 @@ async function executeScriptNode(
     });
 
     return { state: 'failed', output: '', error: errorMsg };
+  } finally {
+    // Runs on every exit path — success, failure, and the early returns inside the try. Cleanup
+    // failure must never mask the node's real outcome, so it is logged and swallowed rather than
+    // thrown: losing a temp dir is a leak, losing the verdict is a false green.
+    if (inlineScriptDir) {
+      await rm(inlineScriptDir, { recursive: true, force: true }).catch((cleanupErr: Error) => {
+        getLog().warn(
+          { err: cleanupErr, nodeId: node.id, dir: inlineScriptDir },
+          'script_node_tempdir_cleanup_failed'
+        );
+      });
+    }
   }
 }
 
