@@ -107,10 +107,47 @@ describe('createArchonUIContext', () => {
     expect(result.error).toBeDefined();
   });
 
-  test('theme getter returns a proxy that throws on property access', () => {
+  /**
+   * This test previously asserted that the theme proxy THROWS, matching /Archon's remote UI stub/.
+   * It has never passed. Both this file and ui-context-stub.ts arrived in the same snapshot commit
+   * (c251fef) already disagreeing, and the package's old &&-chained test script never named this
+   * file, so nothing ever ran it.
+   *
+   * The implementation is the correct side. ui-context-stub.ts:37-40 states the contract and its
+   * reason: theme returns identity decorators, because the styled strings are handed to no-op
+   * setStatus/setWidget sinks anyway, so stripping styling is safe — and throwing here would crash
+   * extensions like plannotator mid-tool-call. The message the old test looked for belongs to a
+   * different method entirely (setTheme, line 151), which is covered above.
+   *
+   * Rewritten to assert the real contract, because it is load-bearing: a regression to throwing
+   * would take down any extension that styles a string.
+   */
+  test('theme decorators are identity functions and never throw', () => {
     const { ui } = mk();
-    const themeRef = ui.theme;
-    expect(() => themeRef.fg('accent', 'text')).toThrow(/Archon's remote UI stub/);
+    const theme = ui.theme;
+
+    // fg(color, text) and bg(color, text) — the decorated text is the LAST string argument.
+    expect(theme.fg('accent', 'text')).toBe('text');
+    expect(theme.bg('accent', 'text')).toBe('text');
+
+    // Single-argument decorators return their input unchanged.
+    expect(theme.bold('loud')).toBe('loud');
+    expect(theme.strikethrough('gone')).toBe('gone');
+
+    // An unknown decorator must not throw either — the proxy answers every property.
+    expect(() =>
+      (theme as unknown as Record<string, (s: string) => string>).notAThing!('x')
+    ).not.toThrow();
+  });
+
+  test('theme exposes colour-mode metadata without styling', () => {
+    const { ui } = mk();
+    const theme = ui.theme;
+    expect(theme.getColorMode()).toBe('truecolor');
+    expect(theme.getFgAnsi()).toBe('');
+    expect(theme.getBgAnsi()).toBe('');
+    // Identifying fields are deliberately absent — there is no real theme behind this stub.
+    expect(theme.name).toBeUndefined();
   });
 
   test('onTerminalInput returns a disposer that is safe to call', () => {
