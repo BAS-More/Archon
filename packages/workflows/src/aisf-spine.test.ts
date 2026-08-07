@@ -26,8 +26,10 @@
  */
 
 import { describe, it, expect } from 'bun:test';
-import { readFileSync } from 'fs';
+import { readFileSync, mkdtempSync, writeFileSync, chmodSync } from 'fs';
 import { join } from 'path';
+import { tmpdir } from 'os';
+import { execFileSync } from 'child_process';
 
 import { parseWorkflow } from './loader';
 import { buildTopologicalLayers } from './dag-executor';
@@ -40,8 +42,20 @@ const SPINE_PATH = join(REPO_ROOT, '.archon', 'workflows', 'aisf-spine.yaml');
 /** The stages, in the order the plan names them. Order is part of the contract. */
 const STAGES = ['intake', 'package', 'codegen', 'sandbox', 'test', 'evidence', 'verdict'] as const;
 
+/**
+ * Read the spine with line endings normalised to LF.
+ *
+ * NOT cosmetic. The seeded-defect cases below locate anchors like `- id: intake\n    depends_on: []`
+ * by substring. Git rewrote this file to CRLF on a stash round-trip, at which point every one of
+ * those anchors stopped matching — and a seed that fails to apply produces a test that passes while
+ * asserting nothing. That is the estate's own recurring bug (M0's `sdl_snapshot_matches`, where the
+ * whole diff turned out to be \n vs \r\n) reappearing inside the tests meant to catch it.
+ *
+ * Caught the honest way: the suite went green pre-commit and red immediately after the round-trip.
+ * The `not.toEqual(readSpine())` guard on each seed is what surfaced it rather than passing silently.
+ */
 function readSpine(): string {
-  return readFileSync(SPINE_PATH, 'utf8');
+  return readFileSync(SPINE_PATH, 'utf8').split('\r\n').join('\n');
 }
 
 /** Parse the real file through the real entry point, failing loudly with the parser's own message. */
@@ -194,7 +208,7 @@ describe('HONESTY — an unimplemented stage must fail, never pass vacuously', (
   //
   // THIS IS A RATCHET. When T1.9/T1.10/T1.12 wire a stage for real, its entry is removed from
   // STUBBED and this test starts demanding the opposite. Neither direction is silent.
-  const STUBBED = ['package', 'sandbox', 'test', 'evidence', 'verdict'] as const;
+  const STUBBED = ['package', 'sandbox', 'evidence', 'verdict'] as const; // 'test' wired by T1.9
 
   const bashOf = (id: string): string => {
     const node = parseSpine()!.nodes.find(n => n.id === id);
@@ -237,6 +251,13 @@ describe('HONESTY — an unimplemented stage must fail, never pass vacuously', (
     expect(fallThrough).not.toMatch(/\bexit\s+70\b/);
   });
 
+  it('the test stage is no longer a stub', () => {
+    // Guards the ratchet from the other side: if someone reverts T1.9 to a stub, STUBBED would
+    // no longer describe the file and this says so rather than quietly passing.
+    const script = parseSpine()!.nodes.find(n => n.id === 'test') as { bash: string };
+    expect(script.bash).not.toContain('NOT-IMPLEMENTED');
+  });
+
   it('no stage is left with an unbounded timeout', () => {
     // A hung stage with no timeout stalls the pipeline indefinitely rather than failing it —
     // indistinguishable from slow work, and it never reaches the verdict that would say so.
@@ -246,5 +267,84 @@ describe('HONESTY — an unimplemented stage must fail, never pass vacuously', (
         expect((node as { timeout: number }).timeout).toBeGreaterThan(0);
       }
     }
+  });
+});
+
+describe('T1.9 — the test stage runs TestTeam and propagates its verdict', () => {
+  /**
+   * These EXECUTE the node's bash with a fake runner rather than pattern-matching its text.
+   *
+   * The failure being guarded against is a stage that runs the test suite and then exits 0
+   * regardless — the pipeline reports success, the suite reported failure, and no assertion over
+   * the script's *wording* would notice. Only running it and observing the exit code can.
+   *
+   * The fake is placed on PATH under the real command name, which is how resolution works in
+   * production too, so the test exercises the same lookup the deployed node will.
+   */
+
+  const testStageScript = (): string => {
+    const node = parseSpine()!.nodes.find(n => n.id === 'test');
+    if (!node || !('bash' in node) || typeof node.bash !== 'string') {
+      throw new Error("the 'test' node is not a bash node");
+    }
+    return node.bash;
+  };
+
+  /** Run a script under bash with `testteam` on PATH exiting `code`. Returns the observed status. */
+  function runWithFakeRunner(script: string, code: number, opts: { install?: boolean } = {}) {
+    const dir = mkdtempSync(join(tmpdir(), 'aisf-t19-'));
+    if (opts.install !== false) {
+      const fake = join(dir, 'testteam');
+      writeFileSync(fake, `#!/bin/sh\necho "fake testteam ran"\nexit ${code}\n`, { mode: 0o755 });
+      chmodSync(fake, 0o755);
+    }
+    // POSIX-ify for msys bash: C:\x -> /c/x
+    // Written with string ops rather than regex: msys bash needs `/c/Users/...`, and escaping
+    // backslashes inside a regex literal is exactly the kind of thing that silently half-works.
+    const posixDir =
+      dir[1] === ':'
+        ? `/${dir[0]!.toLowerCase()}/${dir.slice(3).split('\\').join('/')}`
+        : dir.split('\\').join('/');
+    try {
+      execFileSync('bash', ['-c', script], {
+        env: { ...process.env, PATH: `${posixDir}:${process.env.PATH ?? ''}` },
+        encoding: 'utf8',
+        stdio: 'pipe',
+      });
+      return { status: 0 };
+    } catch (e) {
+      return { status: (e as { status?: number }).status ?? -1 };
+    }
+  }
+
+  it('a failing suite fails the stage — exit 1 is propagated, not swallowed', () => {
+    // THE CENTRAL CASE. TestTeam exits 1 for a blocking agent failure.
+    expect(runWithFakeRunner(testStageScript(), 1).status).toBe(1);
+  });
+
+  it('advisory warnings are propagated as 2, not flattened to 0 or 1', () => {
+    // TestTeam's EXIT_CODE.ADVISORY_WARNINGS. This is also the code deriveVerdict returns when
+    // the gates are clean but the evidence does not support a pass — zero tests executed, a
+    // silent agent. Flattening it to 0 would reinstate DEF-24 one layer up.
+    expect(runWithFakeRunner(testStageScript(), 2).status).toBe(2);
+  });
+
+  it('a passing suite passes the stage', () => {
+    expect(runWithFakeRunner(testStageScript(), 0).status).toBe(0);
+  });
+
+  it('a MISSING runner fails the stage rather than skipping it', () => {
+    // The M0 lesson stated as a property: an absent test runner must never read as "nothing to
+    // report, carry on". With no fake installed, `command -v` finds nothing.
+    const status = runWithFakeRunner(testStageScript(), 0, { install: false }).status;
+    expect(status).not.toBe(0);
+  });
+
+  it('TEETH — this suite detects a stage that swallows the exit code', () => {
+    // Without this, every assertion above would also pass against a script ending in `exit 0`,
+    // and the suite would certify the exact defect it exists to prevent.
+    const swallowing = 'testteam --phase all || true\nexit 0\n';
+    expect(runWithFakeRunner(swallowing, 1).status).toBe(0); // the bad script "passes"
+    expect(runWithFakeRunner(testStageScript(), 1).status).toBe(1); // the real one does not
   });
 });
