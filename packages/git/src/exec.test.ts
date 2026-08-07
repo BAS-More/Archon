@@ -123,6 +123,54 @@ describe('execFileAsync — input option (stdin)', () => {
   });
 });
 
+describe('execFileAsync — input option, gaps raised by the gap/drift analyst', () => {
+  test('concurrent invocations do not cross-contaminate stdin or stdout', async () => {
+    // DAG layers execute nodes in parallel, so several script nodes can be piping to bun at the
+    // same time. Each child must receive only its own payload. A shared buffer or a reused stream
+    // would show up as one script printing another's marker.
+    const results = await Promise.all(
+      Array.from({ length: 8 }, (_, i) =>
+        runViaStdin(`const id = ${i};\nconsole.log("marker-" + id);`)
+      )
+    );
+    expect(results.map(r => r.stdout.trim())).toEqual(
+      Array.from({ length: 8 }, (_, i) => `marker-${i}`)
+    );
+  });
+
+  test('a large payload survives intact', async () => {
+    // stdin is a stream; a payload bigger than one pipe buffer (64 KB on Windows) needs more than
+    // one write to drain. Truncation here would silently execute a PREFIX of the user's script,
+    // which would be the worst possible failure mode: valid syntax, wrong program, exit 0.
+    const lines = Array.from({ length: 5000 }, (_, i) => `const v${i} = ${i};`).join('\n');
+    const { stdout } = await runViaStdin(`${lines}\nconsole.log("tail-reached:" + v4999);`);
+    expect(stdout.trim()).toBe('tail-reached:4999');
+  });
+
+  test('input and no-input paths agree on a command that behaves identically', async () => {
+    // The no-input path is claimed unchanged. Rather than assert that in the abstract, run the
+    // same observable behaviour through both branches and require the same answer.
+    const viaArgs = await execFileAsync('bun', ['--no-env-file', '-e', 'console.log("same")']);
+    const viaStdin = await runViaStdin('console.log("same")');
+    expect(viaStdin.stdout.trim()).toBe(viaArgs.stdout.trim());
+
+    let argsErr: (Error & { code?: number | string }) | undefined;
+    let stdinErr: (Error & { code?: number | string }) | undefined;
+    try {
+      await execFileAsync('bun', ['--no-env-file', '-e', 'process.exit(5)']);
+    } catch (e) {
+      argsErr = e as Error & { code?: number | string };
+    }
+    try {
+      await runViaStdin('process.exit(5)');
+    } catch (e) {
+      stdinErr = e as Error & { code?: number | string };
+    }
+    expect(stdinErr?.code).toBe(argsErr?.code as number);
+    expect(stdinErr?.code).toBe(5);
+  });
+});
+
 describe('execFileAsync — no input option (unchanged path)', () => {
   test('still resolves stdout for a normal argv invocation', async () => {
     const { stdout } = await execFileAsync('bun', ['--version']);
