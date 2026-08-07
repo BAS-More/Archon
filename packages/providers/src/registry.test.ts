@@ -239,6 +239,31 @@ describe('registry', () => {
       const all = getRegisteredProviders();
       expect(all.length).toBe(2);
     });
+
+    /**
+     * Rescued from two orphaned `provider-bootstrap.test.ts` files (packages/cli and
+     * packages/server) that specified `bootstrap{Cli,Server}ProviderRegistry` wrappers which were
+     * never written — the module is absent from the whole history, so those suites could never
+     * load and had never once run. Deleting them outright would have dropped this invariant
+     * silently, which is why it is ported here rather than discarded with them.
+     *
+     * The invariant matters on its own terms: registering the built-ins must be ADDITIVE. A
+     * community provider registered by a host application before bootstrap must survive it. The
+     * idempotence test above cannot see this — it starts from an empty registry and only ever
+     * counts built-ins, so an implementation that wiped the registry before seeding would still
+     * report exactly 2 and pass.
+     */
+    test('preserves community providers already registered', () => {
+      clearRegistry();
+      registerProvider(makeMockRegistration('custom-community'));
+
+      registerBuiltinProviders();
+
+      const ids = getRegisteredProviders().map(p => p.id);
+      expect(ids).toContain('custom-community');
+      expect(ids).toContain('claude');
+      expect(ids).toContain('codex');
+    });
   });
 
   describe('clearRegistry', () => {
