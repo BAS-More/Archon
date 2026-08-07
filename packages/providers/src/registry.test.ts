@@ -255,7 +255,10 @@ describe('registry', () => {
      */
     test('preserves community providers already registered', () => {
       clearRegistry();
-      registerProvider(makeMockRegistration('custom-community'));
+      const original = makeMockRegistration('custom-community', {
+        displayName: 'Community Original',
+      });
+      registerProvider(original);
 
       registerBuiltinProviders();
 
@@ -263,6 +266,17 @@ describe('registry', () => {
       expect(ids).toContain('custom-community');
       expect(ids).toContain('claude');
       expect(ids).toContain('codex');
+
+      // Presence of the ID is not preservation. An implementation that kept the key but replaced
+      // or blanked the entry would satisfy the check above while destroying the registration —
+      // so assert the surviving entry is the very object registered, with its metadata and
+      // factory intact. (Raised by the adversarial validator against the first version of this
+      // test, which only checked IDs.)
+      const survivor = getRegistration('custom-community');
+      expect(survivor).toBe(original);
+      expect(survivor.displayName).toBe('Community Original');
+      expect(survivor.builtIn).toBe(false);
+      expect(survivor.factory().getType()).toBe('custom-community');
     });
   });
 
