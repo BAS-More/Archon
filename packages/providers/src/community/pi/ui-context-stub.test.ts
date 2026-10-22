@@ -107,10 +107,11 @@ describe('createArchonUIContext', () => {
     expect(result.error).toBeDefined();
   });
 
-  test('theme getter returns a proxy that throws on property access', () => {
+  test('theme getter preserves unstyled text', () => {
     const { ui } = mk();
     const themeRef = ui.theme;
-    expect(() => themeRef.fg('accent', 'text')).toThrow(/Archon's remote UI stub/);
+    expect(themeRef.fg('accent', 'text')).toBe('text');
+    expect(themeRef.bold('text')).toBe('text');
   });
 
   test('onTerminalInput returns a disposer that is safe to call', () => {
@@ -127,6 +128,9 @@ describe('createArchonUIContext', () => {
     expect(() => ui.setHeader(undefined)).not.toThrow();
     expect(() => ui.setTitle('title')).not.toThrow();
     expect(() => ui.setWorkingMessage('working')).not.toThrow();
+    expect(() => ui.setWorkingVisible(true)).not.toThrow();
+    expect(() => ui.setWorkingIndicator()).not.toThrow();
+    expect(ui.getEditorComponent()).toBeUndefined();
     expect(() => ui.setHiddenThinkingLabel('label')).not.toThrow();
     expect(() => ui.pasteToEditor('text')).not.toThrow();
     expect(() => ui.setEditorText('text')).not.toThrow();

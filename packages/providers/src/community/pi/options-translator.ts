@@ -3,7 +3,7 @@ import { homedir } from 'node:os';
 import { join } from 'node:path';
 
 import {
-  codingTools,
+  type createCodingTools,
   createBashTool,
   createEditTool,
   createFindTool,
@@ -18,11 +18,11 @@ import type { ThinkingLevel } from '@mariozechner/pi-ai';
 
 /**
  * Pi's exported `Tool` type is structurally `AgentTool<TSchema>` and isn't
- * re-exported at the package root. Deriving it from the `codingTools` aggregate
- * (which IS re-exported and typed as `Tool[]`) gives us a namespace-free alias
+ * re-exported at the package root. Deriving it from the `createCodingTools` factory
+ * (which is re-exported and returns `Tool[]`) gives us a namespace-free alias
  * that satisfies TS's portable-type requirement.
  */
-type PiTool = (typeof codingTools)[number];
+type PiTool = ReturnType<typeof createCodingTools>[number];
 
 import type { NodeConfig } from '../../types';
 
@@ -160,7 +160,7 @@ export interface ResolvedTools {
   unknownTools: string[];
 }
 
-/** Pi's default coding-tool set (mirrors `codingTools` export: read/bash/edit/write). */
+/** Pi's default coding-tool set (mirrors `createCodingTools`: read/bash/edit/write). */
 const PI_DEFAULT_TOOL_NAMES = [
   'read',
   'bash',
