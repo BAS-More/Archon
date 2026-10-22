@@ -68,6 +68,7 @@ scopes, setup choice and explicit not-applicable reasons. This is a design
 requirement; this template does not ship a generic config parser or installer.
 
 Implement or adopt a reviewed, repeatable installer that:
+
 - audits and installs locked developer tooling separately from application
   runtime dependencies;
 - verifies tool/model revisions and asset sizes/hashes;
@@ -93,17 +94,17 @@ Document the actual installed commands in the target README and setup guide.
 
 Record every applicable view and its extraction limits:
 
-| View | Evidence to derive from this repository |
-| --- | --- |
-| Structural | Files, symbols, calls and references |
-| Dependencies | Manifests, lockfiles and resolved package relationships |
-| Modules | Language-aware import/export and module resolution |
-| Database | Declared schema and migrations using the target database/ORM |
-| Processes | Detected execution flows and functional communities |
-| Hierarchy | Actual agent/component ownership and orchestration, if present |
-| Semantic | Local embeddings of allowed source and durable documentation |
-| Contracts | Source sites for HTTP, MCP, events or other declared interfaces |
-| Workflows | Build, test, release and deployment definitions |
+| View         | Evidence to derive from this repository                         |
+| ------------ | --------------------------------------------------------------- |
+| Structural   | Files, symbols, calls and references                            |
+| Dependencies | Manifests, lockfiles and resolved package relationships         |
+| Modules      | Language-aware import/export and module resolution              |
+| Database     | Declared schema and migrations using the target database/ORM    |
+| Processes    | Detected execution flows and functional communities             |
+| Hierarchy    | Actual agent/component ownership and orchestration, if present  |
+| Semantic     | Local embeddings of allowed source and durable documentation    |
+| Contracts    | Source sites for HTTP, MCP, events or other declared interfaces |
+| Workflows    | Build, test, release and deployment definitions                 |
 
 A genuinely absent capability may be marked not applicable with source evidence.
 An existing capability with no extractor is unsupported/blocked, not absent.
