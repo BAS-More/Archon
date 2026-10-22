@@ -105,6 +105,12 @@ export function createArchonUIContext(bridge: ArchonUIBridge): ExtensionUIContex
     setWorkingMessage(_message?: string): void {
       noop();
     },
+    setWorkingVisible(_visible: boolean): void {
+      noop();
+    },
+    setWorkingIndicator(_options?: Parameters<ExtensionUIContext['setWorkingIndicator']>[0]): void {
+      noop();
+    },
     setHiddenThinkingLabel(_label?: string): void {
       noop();
     },
@@ -128,6 +134,14 @@ export function createArchonUIContext(bridge: ArchonUIBridge): ExtensionUIContex
     },
     setEditorText(_text: string): void {
       noop();
+    },
+    addAutocompleteProvider(
+      _factory: Parameters<ExtensionUIContext['addAutocompleteProvider']>[0]
+    ): void {
+      noop();
+    },
+    getEditorComponent(): ReturnType<ExtensionUIContext['getEditorComponent']> {
+      return undefined;
     },
     getEditorText(): string {
       return '';

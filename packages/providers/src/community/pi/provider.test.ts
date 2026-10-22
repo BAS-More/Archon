@@ -111,13 +111,16 @@ const MockDefaultResourceLoader = mock((_opts: unknown) => ({
 
 // Tool factory mocks — each returns an opaque object tagged with the tool
 // name so assertions can verify which tools the provider selected.
-const mockCreateReadTool = mock((_cwd: string) => ({ __piTool: 'read' }));
-const mockCreateBashTool = mock((_cwd: string, _options?: unknown) => ({ __piTool: 'bash' }));
-const mockCreateEditTool = mock((_cwd: string) => ({ __piTool: 'edit' }));
-const mockCreateWriteTool = mock((_cwd: string) => ({ __piTool: 'write' }));
-const mockCreateGrepTool = mock((_cwd: string) => ({ __piTool: 'grep' }));
-const mockCreateFindTool = mock((_cwd: string) => ({ __piTool: 'find' }));
-const mockCreateLsTool = mock((_cwd: string) => ({ __piTool: 'ls' }));
+const mockCreateReadTool = mock((_cwd: string) => ({ __piTool: 'read', name: 'read' }));
+const mockCreateBashTool = mock((_cwd: string, _options?: unknown) => ({
+  __piTool: 'bash',
+  name: 'bash',
+}));
+const mockCreateEditTool = mock((_cwd: string) => ({ __piTool: 'edit', name: 'edit' }));
+const mockCreateWriteTool = mock((_cwd: string) => ({ __piTool: 'write', name: 'write' }));
+const mockCreateGrepTool = mock((_cwd: string) => ({ __piTool: 'grep', name: 'grep' }));
+const mockCreateFindTool = mock((_cwd: string) => ({ __piTool: 'find', name: 'find' }));
+const mockCreateLsTool = mock((_cwd: string) => ({ __piTool: 'ls', name: 'ls' }));
 
 mock.module('@mariozechner/pi-coding-agent', () => ({
   createAgentSession: mockCreateAgentSession,
@@ -130,6 +133,7 @@ mock.module('@mariozechner/pi-coding-agent', () => ({
   },
   SettingsManager: { inMemory: mockSettingsManagerInMemory },
   DefaultResourceLoader: MockDefaultResourceLoader,
+  getAgentDir: () => '/tmp/archon-pi-test-agent',
   createReadTool: mockCreateReadTool,
   createBashTool: mockCreateBashTool,
   createEditTool: mockCreateEditTool,
@@ -815,7 +819,8 @@ describe('PiProvider', () => {
 
     const [callArgs] = mockCreateAgentSession.mock.calls[0] as [Record<string, unknown>];
     expect(Array.isArray(callArgs.tools)).toBe(true);
-    const tools = callArgs.tools as Array<{ __piTool: string }>;
+    const tools = callArgs.customTools as Array<{ __piTool: string; name: string }>;
+    expect(callArgs.tools).toEqual(tools.map(tool => tool.name));
     expect(tools.map(t => t.__piTool).sort()).toEqual(['grep', 'read']);
   });
 
@@ -864,7 +869,8 @@ describe('PiProvider', () => {
     );
 
     const [callArgs] = mockCreateAgentSession.mock.calls[0] as [Record<string, unknown>];
-    const tools = callArgs.tools as Array<{ __piTool: string }>;
+    const tools = callArgs.customTools as Array<{ __piTool: string; name: string }>;
+    expect(callArgs.tools).toEqual(tools.map(tool => tool.name));
     // Pi has 7 built-ins, 2 denied → 5 remain
     expect(tools).toHaveLength(5);
     expect(tools.find(t => t.__piTool === 'bash')).toBeUndefined();
@@ -899,7 +905,8 @@ describe('PiProvider', () => {
 
     const [callArgs] = mockCreateAgentSession.mock.calls[0] as [Record<string, unknown>];
     // Env present → we override Pi's built-in codingTools so bash sees the env.
-    const tools = callArgs.tools as Array<{ __piTool: string }>;
+    const tools = callArgs.customTools as Array<{ __piTool: string; name: string }>;
+    expect(callArgs.tools).toEqual(tools.map(tool => tool.name));
     expect(Array.isArray(tools)).toBe(true);
     expect(tools.map(t => t.__piTool).sort()).toEqual(['bash', 'edit', 'read', 'write']);
 

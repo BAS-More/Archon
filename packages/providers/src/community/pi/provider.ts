@@ -419,7 +419,9 @@ export class PiProvider implements IAgentProvider {
       settingsManager,
       resourceLoader,
       ...(thinkingLevel ? { thinkingLevel } : {}),
-      ...(filteredTools !== undefined ? { tools: filteredTools } : {}),
+      ...(filteredTools !== undefined
+        ? { tools: filteredTools.map(tool => tool.name), customTools: filteredTools }
+        : {}),
     });
 
     if (modelFallbackMessage) {
