@@ -1489,6 +1489,8 @@ async function executeScriptNode(
   // Build the command and args based on runtime and inline vs named
   let cmd = '';
   let args: string[] = [];
+  /** Inline script text piped to the child's stdin, keeping it out of argv entirely. */
+  let stdinPayload: string | undefined;
 
   const nodeDeps = node.deps ?? [];
 
@@ -1497,10 +1499,29 @@ async function executeScriptNode(
       // Inline code execution
       if (node.runtime === 'bun') {
         cmd = 'bun';
-        // --no-env-file prevents Bun from auto-loading .env from the execution
-        // cwd (the target repo). Without this, repo .env leaks into the script
-        // subprocess despite Archon's parent process cleanup.
-        args = ['--no-env-file', '-e', finalScript];
+        // NOT `-e`, and NOT a temp file — the script goes in on STDIN.
+        //
+        // `bun -e <script>` on Windows, where the script contains a NEWLINE, resolves with empty
+        // stdout AND empty stderr regardless of what the script did: a failing script node
+        // reported node_completed, and a succeeding one produced no output for `$node.output`
+        // downstream. Verified against promisify(execFile), and specific to `bun -e` — `bash -c`,
+        // `node -e` and `python -c` all handle multi-line input correctly. Since almost every
+        // real script has newlines, the common case was the broken one, silently, in both
+        // directions.
+        //
+        // A temp file fixes that but breaks relative imports: a script FILE resolves `./lib/x`
+        // from its own directory, whereas `-e` resolves it from cwd. Piping via `bun run -` is
+        // the only form that keeps cwd-relative resolution, reports failures honestly, and
+        // writes nothing to disk — so there is also nothing to clean up, and no artefact left in
+        // the user's checkout if the process is killed.
+        //
+        // It removes a leak by construction too: with the body out of argv, Node's
+        // `Command failed: <cmd>` line cannot embed the script or any secret inside it.
+        //
+        // --no-env-file still applies: it stops Bun auto-loading .env from the execution cwd
+        // (the target repo), which would otherwise leak repo secrets into the script subprocess.
+        args = ['--no-env-file', 'run', '-'];
+        stdinPayload = finalScript;
       } else {
         // uv run --with dep1 --with dep2 python -c <code>
         cmd = 'uv';
@@ -1593,6 +1614,7 @@ async function executeScriptNode(
       cwd,
       timeout,
       env: subprocessEnv,
+      ...(stdinPayload !== undefined ? { input: stdinPayload } : {}),
     });
 
     // Trim trailing newline from stdout (common shell behavior)

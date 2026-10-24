@@ -861,17 +861,45 @@ describe('GitHubAdapter', () => {
       return testAdapter.ensureRepoReady(owner, repo, defaultBranch, repoPath, shouldSync);
     }
 
+    /**
+     * A path that is GUARANTEED not to exist: a freshly created temp directory plus a child that
+     * was never created.
+     *
+     * These tests previously hardcoded '/nonexistent/path' and assumed no such directory could
+     * exist. On Windows that resolves to C:\nonexistent\path — which does exist on at least this
+     * machine, created months ago by unrelated tooling that used '/nonexistent/' as a throwaway
+     * path and then genuinely wrote to it. `access()` therefore succeeded, `ensureRepoReady`
+     * correctly skipped the clone, and all three tests failed while the production code was right.
+     *
+     * A test whose outcome depends on stray filesystem state elsewhere on the machine is not a
+     * test. Deriving the path from mkdtemp makes it deterministic and machine-independent.
+     */
+    async function missingPath(): Promise<{ path: string; cleanup: () => Promise<void> }> {
+      const { mkdtemp, rm } = await import('fs/promises');
+      const { tmpdir } = await import('os');
+      const dir = await mkdtemp(`${tmpdir()}/github-missing-`);
+      return {
+        path: `${dir}/never-created`,
+        cleanup: () => rm(dir, { recursive: true, force: true }),
+      };
+    }
+
     test('clones repository when directory does not exist', async () => {
       mockCloneRepository.mockResolvedValue({ ok: true, value: undefined });
+      const missing = await missingPath();
 
-      await callEnsureRepoReady('owner', 'repo', 'main', '/nonexistent/path', false);
+      try {
+        await callEnsureRepoReady('owner', 'repo', 'main', missing.path, false);
 
-      expect(mockCloneRepository).toHaveBeenCalledTimes(1);
-      const [url, path] = mockCloneRepository.mock.calls[0];
-      expect(url).toBe('https://github.com/owner/repo.git');
-      expect(path).toBe('/nonexistent/path');
-      // 3rd arg is { token } when GITHUB_TOKEN is set, undefined otherwise
-      expect(mockAddSafeDirectory).toHaveBeenCalledWith('/nonexistent/path');
+        expect(mockCloneRepository).toHaveBeenCalledTimes(1);
+        const [url, path] = mockCloneRepository.mock.calls[0];
+        expect(url).toBe('https://github.com/owner/repo.git');
+        expect(path).toBe(missing.path);
+        // 3rd arg is { token } when GITHUB_TOKEN is set, undefined otherwise
+        expect(mockAddSafeDirectory).toHaveBeenCalledWith(missing.path);
+      } finally {
+        await missing.cleanup();
+      }
     });
 
     test('syncs repository when directory exists and shouldSync is true', async () => {
@@ -915,9 +943,14 @@ describe('GitHubAdapter', () => {
         error: { code: 'not_a_repo', path: 'https://github.com/owner/repo.git' },
       });
 
-      await expect(
-        callEnsureRepoReady('owner', 'repo', 'main', '/nonexistent/path', false)
-      ).rejects.toThrow('not found or is private');
+      const missing = await missingPath();
+      try {
+        await expect(
+          callEnsureRepoReady('owner', 'repo', 'main', missing.path, false)
+        ).rejects.toThrow('not found or is private');
+      } finally {
+        await missing.cleanup();
+      }
     });
 
     test('throws user-friendly error for permission_denied clone error', async () => {
@@ -926,9 +959,14 @@ describe('GitHubAdapter', () => {
         error: { code: 'permission_denied', path: 'https://github.com/owner/repo.git' },
       });
 
-      await expect(
-        callEnsureRepoReady('owner', 'repo', 'main', '/nonexistent/path', false)
-      ).rejects.toThrow('Authentication failed');
+      const missing = await missingPath();
+      try {
+        await expect(
+          callEnsureRepoReady('owner', 'repo', 'main', missing.path, false)
+        ).rejects.toThrow('Authentication failed');
+      } finally {
+        await missing.cleanup();
+      }
     });
 
     test('throws user-friendly error for sync branch_not_found', async () => {
