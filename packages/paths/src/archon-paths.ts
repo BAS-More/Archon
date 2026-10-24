@@ -67,7 +67,14 @@ export function getArchonHome(): string {
           'Unset ARCHON_HOME or provide a valid path.'
       );
     }
-    return expandTilde(envHome);
+    const trimmedEnvHome = envHome.trim();
+    if (!trimmedEnvHome) {
+      throw new Error('ARCHON_HOME is set but empty. Unset ARCHON_HOME or provide a valid path.');
+    }
+    if (trimmedEnvHome.includes('\0')) {
+      throw new Error('ARCHON_HOME contains a NUL byte, which is not allowed.');
+    }
+    return expandTilde(trimmedEnvHome);
   }
 
   return join(homedir(), '.archon');
