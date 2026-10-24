@@ -20,6 +20,16 @@ import { createLogger } from '@archon/paths';
 
 /** Lazy-initialized logger (deferred so test mocks can intercept createLogger) */
 let cachedLog: ReturnType<typeof createLogger> | undefined;
+
+function getSanitizedGitHubToken(raw: string | undefined): string | undefined {
+  if (!raw) return undefined;
+  const token = raw.trim();
+  if (!token) return undefined;
+  if (/[\r\n\0]/.test(token)) {
+    return undefined;
+  }
+  return encodeURIComponent(token);
+}
 function getLog(): ReturnType<typeof createLogger> {
   if (!cachedLog) cachedLog = createLogger('clone');
   return cachedLog;
@@ -247,7 +257,7 @@ export async function cloneRepository(repoUrl: string): Promise<RegisterResult> 
 
   // Build clone command with authentication if GitHub token is available
   let cloneUrl = workingUrl;
-  const ghToken = process.env.GH_TOKEN;
+  const ghToken = getSanitizedGitHubToken(process.env.GH_TOKEN);
 
   if (ghToken && workingUrl.includes('github.com')) {
     if (workingUrl.startsWith('https://github.com')) {

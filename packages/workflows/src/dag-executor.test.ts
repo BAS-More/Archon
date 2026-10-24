@@ -5999,6 +5999,64 @@ describe('executeDagWorkflow -- script nodes', () => {
     expect(mockSendQueryDag.mock.calls.length).toBe(0);
   });
 
+  /**
+   * MULTI-LINE inline bun scripts. The single-line case above is the easy one; almost every real
+   * script node has newlines in it, and that is the case that was silently broken.
+   *
+   * On Windows, `bun -e <script>` where the script contains a newline resolves with EMPTY stdout
+   * and EMPTY stderr regardless of what the script did — verified directly against
+   * promisify(execFile), and specific to `bun -e`: `bash -c`, `node -e` and `python -c` all
+   * handle multi-line input correctly, and single-line `bun -e` is fine too. The consequence is
+   * that a failing script node reports node_completed and a successful one yields no output, so
+   * `$node.output` downstream is empty and nothing anywhere says so.
+   *
+   * This asserts the output actually arrives, which is the half of the defect that no test
+   * covered. The companion case — a failing multi-line script must FAIL — is asserted by
+   * 'failure message strips the "Command failed: bun -e <body>" prefix and stays small'.
+   */
+  it('inline bun script spanning multiple lines captures its stdout', async () => {
+    const mockDeps = createMockDeps();
+    const platform = createMockPlatform();
+    const workflowRun = makeWorkflowRun('script-multiline-run-id', {
+      workflow_name: 'script-multiline',
+      conversation_id: 'conv-script-ml',
+      user_message: 'multiline script test',
+    });
+
+    const scriptNode: ScriptNode = {
+      id: 'inline-bun-multiline',
+      script: 'const parts = ["multi", "line", "output"];\nconsole.log(parts.join("-"));',
+      runtime: 'bun',
+    };
+
+    await executeDagWorkflow(
+      mockDeps,
+      platform,
+      'conv-script-ml',
+      testDir,
+      { name: 'script-multiline-test', nodes: [scriptNode] },
+      workflowRun,
+      'claude',
+      undefined,
+      join(testDir, 'artifacts'),
+      join(testDir, 'logs'),
+      'main',
+      'docs/',
+      minimalConfig
+    );
+
+    const eventCalls = (mockDeps.store.createWorkflowEvent as ReturnType<typeof mock>).mock.calls;
+    const completedEvent = eventCalls.find(
+      (call: unknown[]) =>
+        (call[0] as { event_type: string }).event_type === 'node_completed' &&
+        (call[0] as { step_name: string }).step_name === 'inline-bun-multiline'
+    );
+    expect(completedEvent).toBeDefined();
+    expect((completedEvent![0] as { data: { node_output: string } }).data.node_output).toBe(
+      'multi-line-output'
+    );
+  });
+
   it('inline bun script output available for downstream substitution', async () => {
     const mockDeps = createMockDeps();
     const platform = createMockPlatform();
@@ -6200,9 +6258,14 @@ describe('executeDagWorkflow -- script nodes', () => {
     // 2 KB diagnostic cap + label prefix + truncation marker should stay under
     // 2.1 KB. Bumping SUBPROCESS_ERROR_MAX_CHARS would trip this.
     expect(errorMsg.length).toBeLessThan(2100);
-    // Bun emits `error: <description>\n    at [eval]:L:C` for parse failures —
-    // the location marker is the strongest signal that the diagnostic survived.
-    expect(errorMsg).toContain('[eval]');
+    // The diagnostic itself must survive, not just the label. Bun reports the parse error and a
+    // source location; the location used to read `[eval]:L:C` because inline scripts ran via
+    // `bun -e`. They now run from a temp file (see dag-executor.ts — `bun -e` silently swallowed
+    // both failures and output for any multi-line script on Windows), so the location is a path.
+    // Asserting the parse error rather than the location keeps this pinned to what actually
+    // matters and independent of how the script reaches bun.
+    expect(errorMsg).toContain('error: Expected ";"');
+    expect(errorMsg).toContain('[exit 1]');
   });
 
   it('timeout kills subprocess', async () => {
@@ -6446,13 +6509,21 @@ describe('executeDagWorkflow -- script nodes', () => {
       { ...minimalConfig, envVars: { MY_SECRET: 'abc123' } }
     );
 
+    // The point of this test is that config.envVars reach the script subprocess. The exact
+    // argv shape is incidental and used to be ['--no-env-file', '-e', <script>]; inline scripts
+    // now run from a temp file because `bun -e` silently dropped failures and output for any
+    // multi-line script on Windows. Asserting the env (and that --no-env-file survives, since
+    // that is what stops the repo's .env leaking in) keeps the test on its own subject.
     expect(execSpy).toHaveBeenCalledWith(
       'bun',
-      ['--no-env-file', '-e', 'console.log("ok")'],
+      expect.arrayContaining(['--no-env-file', 'run']),
       expect.objectContaining({
         env: expect.objectContaining({ MY_SECRET: 'abc123' }),
       })
     );
+    // Guard the regression directly: -e must not come back for inline scripts.
+    const [, argv] = execSpy.mock.calls[0] as [string, string[]];
+    expect(argv).not.toContain('-e');
     execSpy.mockRestore();
   });
 });

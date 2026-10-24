@@ -1,0 +1,136 @@
+name: aisf-spine
+description: |
+  Use when: AI Software Factory processes one work package end to end — from an intake request
+  through code generation, sandboxed execution, testing, evidence capture, and a final verdict.
+  Does: (1) intake turns a raw request into a structured work package; (2) package validates that
+  package is complete enough to build against; (3) codegen produces the change; (4) sandbox runs
+  it under openhuman's hardened Docker sandbox; (5) test runs TestTeam against the result;
+  (6) evidence captures the artefacts that justify the outcome; (7) verdict renders the single
+  pass/fail decision.
+  NOT for: ad-hoc single-node work, or any use before the stage adapters land — every execution
+  stage below is currently an explicit stub that FAILS rather than passing vacuously.
+
+provider: claude
+
+# ---------------------------------------------------------------------------------------------
+# THE SPINE. M1/T1.1.
+#
+# Shape is the contract. `aisf-spine.test.ts` parses THIS FILE through Archon's production
+# `parseWorkflow` and asserts the topology, so the graph cannot drift away from the plan silently.
+#
+# THE SAFETY PROPERTY: `verdict` is transitively downstream of `test`. A rewiring that let a
+# verdict be reached without testing would still parse, still be acyclic, and still have seven
+# nodes — and would certify untested work. The test suite asserts reachability, not node count,
+# because only reachability can see that difference.
+#
+# WHY EVERY EXECUTION STAGE EXITS 70 (see OQ-M1-02 in the cleanup index).
+# The stage adapters are T1.4 (Loop), T1.9 (TestTeam), T1.10 (evidence) and T1.12 (dispatch).
+# None exist yet. A stub that echoes "TODO" and exits 0 would make this DAG report a complete,
+# successful pipeline run having done nothing — which is precisely the false-green defect class
+# that every M0 finding in this estate turned out to be. So each unimplemented stage announces
+# itself and exits 70 (EX_SOFTWARE). This pipeline cannot currently produce a green run, and that
+# is the honest state of it. Each `exit 70` is removed by the task named beside it, not before.
+# ---------------------------------------------------------------------------------------------
+
+nodes:
+  - id: intake
+    depends_on: []
+    prompt: |
+      You are the intake stage of the AI Software Factory pipeline.
+
+      Read the incoming request and produce a STRUCTURED WORK PACKAGE describing what is to be
+      built. Do not write any code. Do not modify any files outside $ARTIFACTS_DIR.
+
+      Write the package as JSON to $ARTIFACTS_DIR/work-package.json with this shape:
+        {
+          "id": "<short kebab-case identifier>",
+          "goal": "<one sentence — what must be true when this is done>",
+          "acceptance": ["<observable criterion>", "..."],
+          "scope": { "repos": ["..."], "paths": ["..."] },
+          "unknowns": ["<anything you could not determine from the request>"]
+        }
+
+      If the request is too ambiguous to produce acceptance criteria, say so explicitly in
+      "unknowns" rather than inventing them. An invented criterion is worse than a missing one:
+      it will be tested against, and it will pass.
+
+  - id: package
+    depends_on: [intake]
+    timeout: 60000
+    bash: |
+      set -euo pipefail
+      # Gate: refuse to build against an incomplete package. The downstream stages assume
+      # acceptance criteria exist; without them `test` has nothing to judge against and would
+      # report success for any output at all.
+      echo "NOT-IMPLEMENTED: package validation (T1.12 — dispatch adapter, S-01)"
+      echo "  would validate: $ARTIFACTS_DIR/work-package.json is present, parses, and carries"
+      echo "  at least one acceptance criterion and a non-empty scope."
+      exit 70
+
+  - id: codegen
+    depends_on: [package]
+    prompt: |
+      You are the codegen stage. Implement the work package at $ARTIFACTS_DIR/work-package.json.
+
+      Follow the repository's TDD discipline: a failing test first, and the failure must be for
+      the intended reason rather than a collection or environment error. Do not weaken, skip, or
+      delete an existing test to make your change pass — if an existing test encodes the very
+      behaviour you were asked to change, say so and stop.
+
+  - id: sandbox
+    depends_on: [codegen]
+    timeout: 900000
+    bash: |
+      set -euo pipefail
+      # Runs the generated change under openhuman's hardened Docker sandbox — non-root
+      # (65534:65534), --pids-limit 256, --read-only with size-capped tmpfs, --cap-drop ALL,
+      # no-new-privileges, and a container name so the timeout path can actually kill it.
+      # See openhuman/src/openhuman/sandbox/docker.rs (T1.6 / T1.7 / T1.8).
+      echo "NOT-IMPLEMENTED: sandbox execution (T1.12 — dispatch adapter, S-01)"
+      exit 70
+
+  - id: test
+    depends_on: [sandbox]
+    timeout: 1800000
+    bash: |
+      set -euo pipefail
+      # Runs TestTeam. `deriveVerdict` (TestTeam/core/verdict.ts, T1.13) is the single verdict
+      # authority: it treats INSUFFICIENT EVIDENCE as a first-class outcome, so a run in which
+      # nothing executed can no longer exit 0.
+      # A missing runner is a failed stage, never a skipped one: an absent TestTeam must not
+      # read as "nothing to report".
+      if ! command -v testteam >/dev/null 2>&1; then
+        echo "test: testteam is not on PATH, so nothing was tested" >&2
+        exit 127
+      fi
+      # TestTeam's exit code is the verdict and is propagated unchanged: 0 pass, 1 a blocking
+      # failure, 2 advisory warnings or insufficient evidence. Flattening 2 to 0 or 1 would
+      # reinstate DEF-24 one layer up.
+      status=0
+      testteam --phase all || status=$?
+      echo "test: testteam exited ${status}"
+      exit "${status}"
+
+  - id: evidence
+    depends_on: [test]
+    timeout: 300000
+    bash: |
+      set -euo pipefail
+      # Collects the artefacts that justify the verdict: executed-test identities, the
+      # five-population reconciliation, sandbox limits READ BACK off the live container rather
+      # than merely passed to it, and the diff under review.
+      echo "NOT-IMPLEMENTED: evidence capture (T1.10)"
+      exit 70
+
+  - id: verdict
+    depends_on: [evidence]
+    timeout: 60000
+    bash: |
+      set -euo pipefail
+      # The stub the plan names explicitly. It renders no verdict, and says so.
+      #
+      # A verdict stage that exits 0 is not a stub — it is a rubber stamp, and it would make
+      # every run of this pipeline report success. Exit 70 until the real authority is wired.
+      echo "NOT-IMPLEMENTED: verdict (stub — T1.13 built the authority, wiring is T1.9/T1.12)"
+      echo "  will delegate to deriveVerdict() in TestTeam/core/verdict.ts."
+      exit 70
