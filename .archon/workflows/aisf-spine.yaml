@@ -97,8 +97,19 @@ nodes:
       # Runs TestTeam. `deriveVerdict` (TestTeam/core/verdict.ts, T1.13) is the single verdict
       # authority: it treats INSUFFICIENT EVIDENCE as a first-class outcome, so a run in which
       # nothing executed can no longer exit 0.
-      echo "NOT-IMPLEMENTED: test execution (T1.9 — TestTeam as a test node)"
-      exit 70
+      # A missing runner is a failed stage, never a skipped one: an absent TestTeam must not
+      # read as "nothing to report".
+      if ! command -v testteam >/dev/null 2>&1; then
+        echo "test: testteam is not on PATH, so nothing was tested" >&2
+        exit 127
+      fi
+      # TestTeam's exit code is the verdict and is propagated unchanged: 0 pass, 1 a blocking
+      # failure, 2 advisory warnings or insufficient evidence. Flattening 2 to 0 or 1 would
+      # reinstate DEF-24 one layer up.
+      status=0
+      testteam --phase all || status=$?
+      echo "test: testteam exited ${status}"
+      exit "${status}"
 
   - id: evidence
     depends_on: [test]
