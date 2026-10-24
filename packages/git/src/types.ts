@@ -1,3 +1,5 @@
+import { isAbsolute, resolve } from 'path';
+
 // Branded types for type-level safety of commonly confused string primitives
 declare const REPO_PATH_BRAND: unique symbol;
 declare const BRANCH_NAME_BRAND: unique symbol;
@@ -7,10 +9,17 @@ export type RepoPath = string & { readonly [REPO_PATH_BRAND]: true };
 export type BranchName = string & { readonly [BRANCH_NAME_BRAND]: true };
 export type WorktreePath = string & { readonly [WORKTREE_PATH_BRAND]: true };
 
-/** Cast a plain string to RepoPath. Rejects empty strings. */
+function normalizeAbsolutePath(value: string, label: string): string {
+  const trimmed = value.trim();
+  if (!trimmed) throw new Error(`${label} cannot be empty`);
+  if (trimmed.includes('\0')) throw new Error(`${label} cannot contain NUL bytes`);
+  if (!isAbsolute(trimmed)) throw new Error(`${label} must be an absolute path`);
+  return resolve(trimmed);
+}
+
+/** Cast a plain string to RepoPath. Rejects empty or invalid paths. */
 export function toRepoPath(path: string): RepoPath {
-  if (!path) throw new Error('RepoPath cannot be empty');
-  return path as RepoPath;
+  return normalizeAbsolutePath(path, 'RepoPath') as RepoPath;
 }
 
 /** Cast a plain string to BranchName. Rejects empty strings. */
@@ -19,10 +28,9 @@ export function toBranchName(name: string): BranchName {
   return name as BranchName;
 }
 
-/** Cast a plain string to WorktreePath. Rejects empty strings. */
+/** Cast a plain string to WorktreePath. Rejects empty or invalid paths. */
 export function toWorktreePath(path: string): WorktreePath {
-  if (!path) throw new Error('WorktreePath cannot be empty');
-  return path as WorktreePath;
+  return normalizeAbsolutePath(path, 'WorktreePath') as WorktreePath;
 }
 
 /** Discriminated union for git operation results at package boundaries */
