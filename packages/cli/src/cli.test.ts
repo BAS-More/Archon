@@ -5,6 +5,7 @@
  * Full integration tests would require mocking the database and commands.
  */
 import { describe, it, expect } from 'bun:test';
+import { tmpdir } from 'os';
 import { parseArgs } from 'util';
 import * as git from '@archon/git';
 
@@ -398,9 +399,9 @@ describe('CLI git repo check', () => {
     });
 
     it('should return null for system directories outside any git repo', async () => {
-      // /tmp is typically not inside a git repo
-      // Note: This test may need adjustment if /tmp happens to be inside a repo
-      const result = await git.findRepoRoot('/tmp');
+      // The OS temp dir is typically not inside a git repo; a hard-coded /tmp does not
+      // exist on Windows. Note: this needs adjustment if the temp dir is inside a repo.
+      const result = await git.findRepoRoot(tmpdir());
       expect(result).toBeNull();
     });
   });
@@ -412,7 +413,7 @@ describe('CLI git repo check', () => {
 
     it('should detect existing directories', () => {
       expect(existsSync(process.cwd())).toBe(true);
-      expect(existsSync('/tmp')).toBe(true);
+      expect(existsSync(tmpdir())).toBe(true);
     });
 
     it('should detect non-existent directories', () => {
