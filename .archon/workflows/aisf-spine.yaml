@@ -7,8 +7,8 @@ description: |
   it under openhuman's hardened Docker sandbox; (5) test runs TestTeam against the result;
   (6) evidence captures the artefacts that justify the outcome; (7) verdict renders the single
   pass/fail decision.
-  NOT for: ad-hoc single-node work, or any use before the stage adapters land — every execution
-  stage below is currently an explicit stub that FAILS rather than passing vacuously.
+  NOT for: ad-hoc single-node work, or any use before the verdict authority lands — verdict is
+  still an explicit stub that FAILS rather than passing vacuously (package and sandbox are T1.12).
 
 provider: claude
 
@@ -23,10 +23,11 @@ provider: claude
 # nodes — and would certify untested work. The test suite asserts reachability, not node count,
 # because only reachability can see that difference.
 #
-# WHY EVERY EXECUTION STAGE EXITS 70 (see OQ-M1-02 in the cleanup index).
+# WHY EVERY UNWIRED EXECUTION STAGE EXITS 70 (see OQ-M1-02 in the cleanup index).
 # The stage adapters are T1.4 (Loop), T1.9 (TestTeam), T1.10 (evidence) and T1.12 (dispatch).
-# None exist yet. A stub that echoes "TODO" and exits 0 would make this DAG report a complete,
-# successful pipeline run having done nothing — which is precisely the false-green defect class
+# T1.4 (codegen), T1.9 (test), T1.10 (evidence) and T1.12 (package, sandbox) are wired; verdict
+# is still a stub (it renders FAIL when sandbox failed or nothing was tested — D-18). A stub that echoes "TODO" and exits 0 would make this
+# DAG report a complete, successful pipeline run having done nothing — which is precisely the false-green defect class
 # that every M0 finding in this estate turned out to be. So each unimplemented stage announces
 # itself and exits 70 (EX_SOFTWARE). This pipeline cannot currently produce a green run, and that
 # is the honest state of it. Each `exit 70` is removed by the task named beside it, not before.
@@ -62,32 +63,218 @@ nodes:
       # Gate: refuse to build against an incomplete package. The downstream stages assume
       # acceptance criteria exist; without them `test` has nothing to judge against and would
       # report success for any output at all.
-      echo "NOT-IMPLEMENTED: package validation (T1.12 — dispatch adapter, S-01)"
-      echo "  would validate: $ARTIFACTS_DIR/work-package.json is present, parses, and carries"
-      echo "  at least one acceptance criterion and a non-empty scope."
-      exit 70
+      # ${ARTIFACTS_DIR}/work-package.json must be present (else 66, EX_NOINPUT), parse as an
+      # object, and carry a non-empty id and goal, at least one non-blank acceptance criterion
+      # and a non-empty scope (repos or paths) — else 65 (EX_DATAERR). Nothing here exits 0
+      # on a package it did not read.
+      : "${ARTIFACTS_DIR:?package: ARTIFACTS_DIR is unset}"
+      pkg="${ARTIFACTS_DIR}/work-package.json"
+      if [ ! -f "${pkg}" ]; then
+        echo "package: work package not found: ${pkg}" >&2
+        exit 66
+      fi
+      command -v node >/dev/null 2>&1 || { echo "package: node is not on PATH" >&2; exit 64; }
+      why="$(node -e '
+        const p = (() => { try { return JSON.parse(require("fs").readFileSync(process.argv[1], "utf8")); } catch { return undefined; } })();
+        const str = x => typeof x === "string" && x.trim() !== "";
+        const list = x => Array.isArray(x) ? x.filter(str) : [];
+        if (!p || typeof p !== "object" || Array.isArray(p)) { console.log("not a JSON object"); process.exit(3); }
+        if (!str(p.id)) { console.log("no id"); process.exit(3); }
+        if (!str(p.goal)) { console.log("no goal"); process.exit(3); }
+        if (list(p.acceptance).length === 0) { console.log("no acceptance criterion"); process.exit(3); }
+        const s = p.scope && typeof p.scope === "object" ? p.scope : {};
+        if (list(s.repos).length === 0 && list(s.paths).length === 0) { console.log("empty scope"); process.exit(3); }
+      ' "${pkg}")" || { echo "package: work package is incomplete: ${why:-unreadable} (${pkg})" >&2; exit 65; }
+      echo "package: ${pkg} is complete"
 
   - id: codegen
     depends_on: [package]
-    prompt: |
-      You are the codegen stage. Implement the work package at $ARTIFACTS_DIR/work-package.json.
+    timeout: 3600000
+    bash: |
+      set -euo pipefail
+      # T1.4 — Loop's maker/checker as the codegen stage. Loop's changed-files-vs-declared-scope
+      # evaluation is the scope-escape gate (CAP-16): a maker diff outside the work package's
+      # scope ends `blocked-scope`, Loop's CLI exits non-zero, and that exit code is passed
+      # through unchanged so `sandbox` and every later stage do not run.
+      #
+      # Inputs (each refused by name, before Loop is started):
+      #   AISF_LOOP_CLI     required: path to Loop's adapters/loop-runner.cli.mjs (the install).
+      #   AISF_TARGET_REPO  the repo Loop works on (default: this node's cwd). Exported as
+      #                     LOOP_ROOT so Loop never falls back to its own cwd default.
+      #   ${ARTIFACTS_DIR}/work-package.json  must declare non-empty scope.paths: no scope
+      #                     means Loop's denylist-only mode, which is refused, not run.
+      # Worktrees are Loop's job: maker and checker each get their own (FR-15). LOOP_WORKTREE=off
+      # is refused, and LOOP_OPEN_PR is forced off — a PR is a later stage, not codegen's.
+      # The braced ${ARTIFACTS_DIR} reads the env var; the bare form is text-substituted by Archon.
+      fail() { echo "codegen: $*" >&2; exit 64; }
 
-      Follow the repository's TDD discipline: a failing test first, and the failure must be for
-      the intended reason rather than a collection or environment error. Do not weaken, skip, or
-      delete an existing test to make your change pass — if an existing test encodes the very
-      behaviour you were asked to change, say so and stop.
+      cli="${AISF_LOOP_CLI:-}"
+      [ -n "${cli}" ] || fail "AISF_LOOP_CLI is unset: it must name Loop's adapters/loop-runner.cli.mjs"
+      case "${cli}" in
+        *loop-runner.cli.mjs) ;;
+        *) fail "AISF_LOOP_CLI must name loop-runner.cli.mjs, got: ${cli}" ;;
+      esac
+      [ -f "${cli}" ] && [ -r "${cli}" ] || fail "AISF_LOOP_CLI is not a readable file: ${cli}"
+      command -v node >/dev/null 2>&1 || fail "node is not on PATH, so Loop's CLI cannot run"
+
+      if [ "${LOOP_WORKTREE:-}" = "off" ]; then
+        fail "LOOP_WORKTREE=off is refused: maker and checker must each run in a Loop-provisioned worktree"
+      fi
+
+      target="${AISF_TARGET_REPO:-${PWD}}"
+      [ -d "${target}" ] || fail "target repository does not exist: ${target}"
+      for f in .loop/prompts/maker.md .loop/prompts/checker.md .loop/budget.json; do
+        [ -f "${target}/${f}" ] || fail "target repository lacks ${f} (${target}/${f})"
+      done
+
+      : "${ARTIFACTS_DIR:?codegen: ARTIFACTS_DIR is unset}"
+      pkg="${ARTIFACTS_DIR}/work-package.json"
+      [ -f "${pkg}" ] || fail "work package not found: ${pkg}"
+      scope="$(node -e '
+        const p = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        const raw = p && p.scope && Array.isArray(p.scope.paths) ? p.scope.paths : [];
+        const s = raw.filter(x => typeof x === "string" && x.trim()).map(x => x.trim());
+        if (s.length === 0 || s.some(x => x.includes(","))) process.exit(3);
+        process.stdout.write(s.join(","));
+      ' "${pkg}")" || fail "work package declares no non-empty scope.paths (${pkg}); refusing to run Loop denylist-only"
+
+      export LOOP_ROOT="${target}"
+      export LOOP_ALLOWED_PATHS="${scope}"
+      export LOOP_OPEN_PR=off
+
+      raw="${ARTIFACTS_DIR}/codegen-loop-stdout.txt"
+      result="${ARTIFACTS_DIR}/codegen-loop-result.json"
+      status=0
+      node "${cli}" > "${raw}" || status=$?
+
+      # Loop prints log lines before its pretty-printed result; the result is the last top-level
+      # JSON object. No readable result is a failure even when Loop exited 0.
+      if ! node -e '
+        const fs = require("fs");
+        const out = fs.readFileSync(process.argv[1], "utf8");
+        const at = out.startsWith("{\n") ? 0 : out.lastIndexOf("\n{\n") + 1;
+        if (at < 0 || out[at] !== "{") process.exit(3);
+        const r = JSON.parse(out.slice(at));
+        fs.writeFileSync(process.argv[2], JSON.stringify({
+          status: r.status,
+          outsideScope: Array.isArray(r.outsideScope) ? r.outsideScope : [],
+          makerWorktree: r.worktree ?? null,
+          checkerWorktree: r.checkerWorktree ?? null,
+          reasons: Array.isArray(r.reasons) ? r.reasons : [],
+        }, null, 2) + "\n");
+      ' "${raw}" "${result}"; then
+        echo "codegen: no readable Loop result in ${raw}" >&2
+        [ "${status}" -ne 0 ] || status=65
+      fi
+      echo "codegen: loop exited ${status}"
+      exit "${status}"
 
   - id: sandbox
     depends_on: [codegen]
     timeout: 900000
     bash: |
       set -euo pipefail
-      # Runs the generated change under openhuman's hardened Docker sandbox — non-root
-      # (65534:65534), --pids-limit 256, --read-only with size-capped tmpfs, --cap-drop ALL,
-      # no-new-privileges, and a container name so the timeout path can actually kill it.
-      # See openhuman/src/openhuman/sandbox/docker.rs (T1.6 / T1.7 / T1.8).
-      echo "NOT-IMPLEMENTED: sandbox execution (T1.12 — dispatch adapter, S-01)"
-      exit 70
+      # T1.12 — S-01 dispatch adapter. Runs one agent turn for this work package on openhuman,
+      # which embeds the tinyagents runtime, through openhuman's CLI process adapter:
+      #   "${AISF_AGENT_CLI}" call --method openhuman.inference_agent_chat --params-stdin
+      # OQ-4 / D-19: `agent.run_turn` is an in-process native-bus handler (its payload carries
+      # trait objects and channels) and cannot be reached from Archon; the existing JSON-RPC
+      # method above runs a headless turn rooted in `cwd` and prints {result, logs, hit_cap}.
+      # Tool execution inside the turn is openhuman's policy (its hardened Docker sandbox, T1.6-
+      # T1.8); this node does not prove the container ran — OC-3 read-back is still open.
+      #
+      # Inputs: AISF_AGENT_CLI (path to the openhuman binary; default: `openhuman` on PATH),
+      #   AISF_AGENT_ID (optional agent definition id), AISF_SANDBOX_TIMEOUT_S (runtime deadline,
+      #   default 840 s, inside this node's 900 s timeout so expiry is OUR code, not a kill),
+      #   ${ARTIFACTS_DIR}/work-package.json, and the maker worktree from codegen-loop-result.json
+      #   (else AISF_TARGET_REPO, else the cwd) as the turn's cwd.
+      # Output: ${ARTIFACTS_DIR}/sandbox-result.json, written only for a runtime that returned an
+      #   outcome. ${ARTIFACTS_DIR}/sandbox-status.json {"exitCode":N,"outcome":...} is written on
+      #   EVERY exit path: it is the AR-1 Design A seam `verdict` reads (D-18).
+      # Exit codes (Archon bash nodes are never retried, so the first failure is final):
+      #   0 success outcome · 64 configuration · 127 runtime absent · 74 runtime failed ·
+      #   75 runtime exceeded the deadline · 76 no outcome · 77 an outcome other than success.
+      outcome="config-error"
+      record() {
+        [ -n "${ARTIFACTS_DIR:-}" ] && [ -d "${ARTIFACTS_DIR}" ] || return 0
+        printf '{"exitCode":%d,"outcome":"%s"}\n' "$1" "${outcome}" > "${ARTIFACTS_DIR}/sandbox-status.json"
+      }
+      trap 'record $?' EXIT
+      fail() { echo "sandbox: $*" >&2; exit 64; }
+
+      : "${ARTIFACTS_DIR:?sandbox: ARTIFACTS_DIR is unset}"
+      command -v node >/dev/null 2>&1 || fail "node is not on PATH"
+      cli="${AISF_AGENT_CLI:-}"
+      if [ -z "${cli}" ]; then cli="$(command -v openhuman 2>/dev/null || true)"; fi
+      if [ -z "${cli}" ] || [ ! -f "${cli}" ]; then
+        outcome="runtime-absent"
+        echo "sandbox: the agent runtime is absent: set AISF_AGENT_CLI to the openhuman binary (got: '${AISF_AGENT_CLI:-}')" >&2
+        exit 127
+      fi
+      deadline="${AISF_SANDBOX_TIMEOUT_S:-840}"
+      case "${deadline}" in ''|*[!0-9]*|0) fail "AISF_SANDBOX_TIMEOUT_S must be a positive integer, got: ${deadline}" ;; esac
+      command -v timeout >/dev/null 2>&1 || fail "timeout is not on PATH, so the runtime deadline cannot be enforced"
+
+      a="${ARTIFACTS_DIR}"
+      [ -f "${a}/work-package.json" ] || fail "work package not found: ${a}/work-package.json"
+      cwd="${AISF_TARGET_REPO:-${PWD}}"
+      if [ -f "${a}/codegen-loop-result.json" ]; then
+        w="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(typeof r.makerWorktree==="string")process.stdout.write(r.makerWorktree)' "${a}/codegen-loop-result.json" 2>/dev/null || true)"
+        [ -n "${w}" ] && cwd="${w}"
+      fi
+      [ -d "${cwd}" ] || fail "the turn's working directory does not exist: ${cwd}"
+
+      params="${a}/sandbox-params.json"
+      node -e '
+        const fs = require("fs");
+        const [pkgPath, cwd, agent, out] = process.argv.slice(1);
+        const p = JSON.parse(fs.readFileSync(pkgPath, "utf8"));
+        const acc = (Array.isArray(p.acceptance) ? p.acceptance : []).map(x => "- " + x).join("\n");
+        const message = "AI Software Factory work package " + p.id + ".\nGoal: " + p.goal +
+          "\nAcceptance criteria:\n" + acc + "\nWork only inside the current working directory.";
+        const params = { message, cwd, thread_id: "aisf-" + p.id };
+        if (agent) params.agent_id = agent;
+        fs.writeFileSync(out, JSON.stringify(params));
+      ' "${a}/work-package.json" "${cwd}" "${AISF_AGENT_ID:-}" "${params}" || fail "cannot build the turn from ${a}/work-package.json"
+
+      raw="${a}/sandbox-runtime-stdout.txt"
+      status=0
+      timeout "${deadline}" "${cli}" call --method openhuman.inference_agent_chat --params-stdin \
+        < "${params}" > "${raw}" || status=$?
+      if [ "${status}" -eq 124 ]; then
+        outcome="timed-out"
+        echo "sandbox: the agent runtime exceeded ${deadline}s" >&2
+        exit 75
+      fi
+      if [ "${status}" -ne 0 ]; then
+        outcome="runtime-failed"
+        echo "sandbox: the agent runtime exited ${status}" >&2
+        exit 74
+      fi
+
+      # The envelope is the last top-level JSON object on stdout. No envelope, or one without a
+      # string result and the completed log, is NO outcome — even though the runtime exited 0.
+      judged=0
+      node -e '
+        const fs = require("fs");
+        const [rawPath, out, cwd] = process.argv.slice(1);
+        const s = fs.readFileSync(rawPath, "utf8").split("\r\n").join("\n");
+        const at = s.startsWith("{\n") ? 0 : s.lastIndexOf("\n{\n") + 1;
+        if (at <= 0 && !s.startsWith("{")) process.exit(3);
+        let r; try { r = JSON.parse(s.slice(at)); } catch { process.exit(3); }
+        if (!r || typeof r.result !== "string" || typeof r.hit_cap !== "boolean" ||
+            !Array.isArray(r.logs) || !r.logs.includes("agent chat completed")) process.exit(3);
+        const outcome = r.hit_cap ? "incomplete" : "success";
+        fs.writeFileSync(out, JSON.stringify({ adapter: "cli", method: "openhuman.inference_agent_chat",
+          outcome, hit_cap: r.hit_cap, result: r.result, logs: r.logs, cwd }, null, 2) + "\n");
+        process.exit(outcome === "success" ? 0 : 4);
+      ' "${raw}" "${a}/sandbox-result.json" "${cwd}" || judged=$?
+      case "${judged}" in
+        0) outcome="success" ;;
+        4) outcome="incomplete"; echo "sandbox: the turn stopped at its tool-iteration cap" >&2; exit 77 ;;
+        *) outcome="no-outcome"; echo "sandbox: the agent runtime returned no outcome (${raw})" >&2; exit 76 ;;
+      esac
+      echo "sandbox: dispatched; outcome ${outcome}"
 
   - id: test
     depends_on: [sandbox]
@@ -99,8 +286,17 @@ nodes:
       # nothing executed can no longer exit 0.
       # A missing runner is a failed stage, never a skipped one: an absent TestTeam must not
       # read as "nothing to report".
+      #
+      # AR-1 Design A (D-18): the numeric status is ALSO recorded in ${ARTIFACTS_DIR}/test-status.json.
+      # A failed bash node reaches downstream nodes only as `state: failed`, so the 1-vs-2
+      # distinction would otherwise be lost. `evidence` and `verdict` (trigger_rule: all_done) read it.
+      record() {
+        [ -n "${ARTIFACTS_DIR:-}" ] || return 0
+        printf '{"exitCode":%d}\n' "$1" > "${ARTIFACTS_DIR}/test-status.json"
+      }
       if ! command -v testteam >/dev/null 2>&1; then
         echo "test: testteam is not on PATH, so nothing was tested" >&2
+        record 127
         exit 127
       fi
       # TestTeam's exit code is the verdict and is propagated unchanged: 0 pass, 1 a blocking
@@ -108,26 +304,182 @@ nodes:
       # reinstate DEF-24 one layer up.
       status=0
       testteam --phase all || status=$?
+      record "${status}"
       echo "test: testteam exited ${status}"
       exit "${status}"
 
   - id: evidence
     depends_on: [test]
+    # AR-1 Design A (D-18): evidence runs whatever `test` did — exit 0, exit 2 (insufficient
+    # evidence) or any failure — because the runs that most need an evidence bundle are the
+    # failing ones. T9-3 as amended: all_done is allowed on evidence and verdict ONLY.
+    trigger_rule: all_done
     timeout: 300000
     bash: |
       set -euo pipefail
-      # Collects the artefacts that justify the verdict: executed-test identities, the
-      # five-population reconciliation, sandbox limits READ BACK off the live container rather
-      # than merely passed to it, and the diff under review.
-      echo "NOT-IMPLEMENTED: evidence capture (T1.10)"
-      exit 70
+      # T1.10 — evidence capture (CAP-23). Builds a bundle of: the diff under review, the
+      # executed-test identities, the `test` node's numeric exit status, and the sandbox limits.
+      # The bundle is built by Walkthrough-app backend/server/lib/evidence-bundle.js and stored
+      # in the tinyjuice content-addressed store. BOTH are external processes: tinyjuice is
+      # GPL-3.0 and this repo is public, so nothing of either is vendored here (D-22a / T6.6).
+      #
+      # Inputs (from ${ARTIFACTS_DIR}):
+      #   review.diff           the diff under review; if absent, derived with git from the maker
+      #                         worktree (codegen-loop-result.json) or AISF_TARGET_REPO.
+      #   executed-tests.json   JSON array of executed-test identities (non-empty strings).
+      #   test-status.json      {"exitCode": N}, written by the `test` node (Design A).
+      #   sandbox-limits-observed.json  limits READ BACK off the live container (OC-3), carrying
+      #                         "source":"docker inspect". Anything else — including configured
+      #                         limits — is recorded as {"status":"unavailable","reason":...}.
+      # Collaborators:
+      #   AISF_EVIDENCE_LIB     path to Walkthrough-app backend/server/lib/evidence-bundle.js
+      #   AISF_CAS_CLI          path to tinyjuice's `tinyjuice-reduce` (put / cat --store-dir)
+      #   AISF_CAS_STORE_DIR    the CAS directory (default ${ARTIFACTS_DIR}/cas)
+      #
+      # Exit codes: 0 bundle stored and verified, root printed as `evidence: root <hash>`;
+      # 64 configuration; 66 EMPTY INPUT (no diff, zero tests, no test status, or no CAS write
+      # succeeded) — no root is printed (TP-1.4 / INV-13); 65 the builder's claim failed the
+      # read-back (an object does not hash to its token, or the bundle is not of these inputs).
+      #
+      # PLAN.md:920 — until T1.13 merges, the bundle is produced and stored but `verdict` does
+      # not consume it.
+      fail() { echo "evidence: $*" >&2; exit 64; }
+      empty() { echo "evidence: EMPTY INPUT: $*" >&2; exit 66; }
+      reject() { echo "evidence: REJECTED: $*" >&2; exit 65; }
+
+      : "${ARTIFACTS_DIR:?evidence: ARTIFACTS_DIR is unset}"
+      lib="${AISF_EVIDENCE_LIB:-}"
+      cas="${AISF_CAS_CLI:-}"
+      [ -n "${lib}" ] && [ -f "${lib}" ] || fail "AISF_EVIDENCE_LIB must name Walkthrough-app's evidence-bundle.js, got: '${lib}'"
+      [ -n "${cas}" ] && [ -f "${cas}" ] || fail "AISF_CAS_CLI must name tinyjuice's tinyjuice-reduce, got: '${cas}'"
+      command -v node >/dev/null 2>&1 || fail "node is not on PATH"
+      store="${AISF_CAS_STORE_DIR:-${ARTIFACTS_DIR}/cas}"
+
+      a="${ARTIFACTS_DIR}"
+      diff="${a}/review.diff"
+      if [ ! -f "${diff}" ]; then
+        wt="${AISF_TARGET_REPO:-${PWD}}"
+        if [ -f "${a}/codegen-loop-result.json" ]; then
+          w="$(node -e 'const r=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(typeof r.makerWorktree==="string")process.stdout.write(r.makerWorktree)' "${a}/codegen-loop-result.json" 2>/dev/null || true)"
+          [ -n "${w}" ] && wt="${w}"
+        fi
+        git -C "${wt}" diff --no-color "${BASE_BRANCH:-HEAD}" -- > "${diff}" 2>/dev/null || : > "${diff}"
+      fi
+      [ -s "${diff}" ] || empty "no diff under review (${diff} is empty or could not be derived)"
+
+      [ -f "${a}/executed-tests.json" ] || empty "zero tests executed: no executed-tests record (${a}/executed-tests.json)"
+      node -e '
+        const t = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        if (!Array.isArray(t) || t.length === 0 || !t.every(x => typeof x === "string" && x.trim())) process.exit(3);
+      ' "${a}/executed-tests.json" 2>/dev/null || empty "zero tests executed (${a}/executed-tests.json is empty or malformed)"
+
+      [ -f "${a}/test-status.json" ] || empty "no test exit status: the test stage did not run (${a}/test-status.json)"
+      node -e '
+        const s = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        if (!s || !Number.isInteger(s.exitCode)) process.exit(3);
+      ' "${a}/test-status.json" 2>/dev/null || empty "test exit status is not a number (${a}/test-status.json)"
+
+      # Sandbox limits: observed only when read back (OC-3). Configured limits are never used.
+      limits="${a}/evidence-sandbox-limits.json"
+      node -e '
+        const fs = require("fs");
+        const [observed, out] = process.argv.slice(1);
+        let rec = { status: "unavailable", reason: "OC-3 read-back unavailable: no limits were read back off the live container" };
+        if (fs.existsSync(observed)) {
+          try {
+            const o = JSON.parse(fs.readFileSync(observed, "utf8"));
+            if (o && o.source === "docker inspect" && o.limits && typeof o.limits === "object") {
+              rec = { status: "observed", source: o.source, limits: o.limits };
+            } else {
+              rec = { status: "unavailable", reason: "the observed-limits record does not name a read-back source" };
+            }
+          } catch { rec = { status: "unavailable", reason: "the observed-limits record is not valid JSON" }; }
+        }
+        fs.writeFileSync(out, JSON.stringify(rec) + "\n");
+      ' "${a}/sandbox-limits-observed.json" "${limits}"
+
+      built="${a}/evidence-builder-stdout.txt"
+      status=0
+      node "${lib}" --diff "${diff}" --tests "${a}/executed-tests.json" \
+        --test-status "${a}/test-status.json" --sandbox-limits "${limits}" \
+        --cas-cli "${cas}" --store-dir "${store}" > "${built}" || status=$?
+      [ "${status}" -ne 66 ] || empty "no CAS write succeeded (the builder exited 66)"
+      [ "${status}" -eq 0 ] || reject "the builder exited ${status}"
+
+      # Do not trust the builder's claim: read every object back through the CAS CLI and
+      # re-hash it, and check the bundle is of THESE inputs.
+      root="$(node -e '
+        const lines = require("fs").readFileSync(process.argv[1], "utf8").trim().split("\n");
+        const r = JSON.parse(lines[lines.length - 1]);
+        if (!/^[0-9a-f]{32}$/.test(r.root)) process.exit(3);
+        process.stdout.write(r.root);
+      ' "${built}" 2>/dev/null)" || reject "the builder printed no root hash"
+
+      check="${a}/evidence-readback"
+      mkdir -p "${check}"
+      "${cas}" cat --store-dir "${store}" "${root}" > "${check}/${root}" || reject "root ${root} cannot be read back"
+      members="$(node -e '
+        const m = JSON.parse(require("fs").readFileSync(process.argv[1], "utf8"));
+        const k = ["diff", "tests", "testExit", "sandboxLimits"];
+        if (!m || !m.members || k.some(x => !/^[0-9a-f]{32}$/.test(m.members[x] || ""))) process.exit(3);
+        process.stdout.write(k.map(x => m.members[x]).join(" "));
+      ' "${check}/${root}" 2>/dev/null)" || reject "root ${root} is not an evidence manifest"
+      for t in ${members}; do
+        "${cas}" cat --store-dir "${store}" "${t}" > "${check}/${t}" || reject "member ${t} cannot be read back"
+      done
+      node -e '
+        const fs = require("fs"); const path = require("path"); const crypto = require("crypto");
+        const [dir, root, diff, tests, status, limits] = process.argv.slice(1);
+        const h = b => crypto.createHash("sha256").update(b).digest("hex").slice(0, 32);
+        const read = t => fs.readFileSync(path.join(dir, t));
+        const m = JSON.parse(read(root).toString("utf8")).members;
+        for (const t of [root, ...Object.values(m)]) {
+          if (h(read(t)) !== t) { console.error("hash mismatch for " + t); process.exit(3); }
+        }
+        const same = (t, f) => read(t).equals(fs.readFileSync(f));
+        if (!same(m.diff, diff) || !same(m.tests, tests) || !same(m.testExit, status) || !same(m.sandboxLimits, limits)) {
+          console.error("bundle members are not the inputs under review"); process.exit(4);
+        }
+        fs.writeFileSync(path.join(path.dirname(dir), "evidence-bundle.json"),
+          JSON.stringify({ root, members: m }, null, 2) + "\n");
+      ' "${check}" "${root}" "${diff}" "${a}/executed-tests.json" "${a}/test-status.json" "${limits}" \
+        || reject "read-back verification failed for root ${root}"
+
+      echo "evidence: root ${root}"
 
   - id: verdict
     depends_on: [evidence]
+    # AR-1 Design A (D-18): verdict runs even when an upstream stage failed, so a failed
+    # sandbox renders FAIL instead of the run silently ending with verdict skipped.
+    trigger_rule: all_done
     timeout: 60000
     bash: |
       set -euo pipefail
-      # The stub the plan names explicitly. It renders no verdict, and says so.
+      # D-18: with all_done, verdict also runs when `sandbox` blew up and `test` never ran. No
+      # test status means the pipeline did not test anything, and that is a FAIL — never a PASS.
+      # AR-1 Design A seam for the sandbox (T1.12): sandbox-status.json carries its numeric code.
+      ss="${ARTIFACTS_DIR:-}/sandbox-status.json"
+      if [ -n "${ARTIFACTS_DIR:-}" ] && [ -f "${ss}" ]; then
+        sline="$(node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(!Number.isInteger(s.exitCode))process.exit(3);process.stdout.write(s.exitCode+" "+String(s.outcome||"unknown"))' "${ss}" 2>/dev/null)" || {
+          echo "VERDICT: FAIL — the sandbox status record is unreadable (${ss})"
+          exit 1
+        }
+        if [ "${sline%% *}" != "0" ]; then
+          echo "VERDICT: FAIL — sandbox failed (exit ${sline%% *}, ${sline#* })"
+          exit 1
+        fi
+      fi
+      st="${ARTIFACTS_DIR:-}/test-status.json"
+      if [ -z "${ARTIFACTS_DIR:-}" ] || [ ! -f "${st}" ]; then
+        echo "VERDICT: FAIL — no test status: an upstream stage (package, codegen or sandbox) failed and nothing was tested"
+        exit 1
+      fi
+      if ! node -e 'const s=JSON.parse(require("fs").readFileSync(process.argv[1],"utf8"));if(!Number.isInteger(s.exitCode))process.exit(3)' "${st}" 2>/dev/null; then
+        echo "VERDICT: FAIL — the test status record is unreadable (${st})"
+        exit 1
+      fi
+      # Beyond that, the stub the plan names explicitly. It renders no verdict, and says so.
+      # PLAN.md:920 — it does not consume the evidence bundle until T1.13 has merged.
       #
       # A verdict stage that exits 0 is not a stub — it is a rubber stamp, and it would make
       # every run of this pipeline report success. Exit 70 until the real authority is wired.

@@ -218,6 +218,7 @@
       "version": "0.3.10",
       "dependencies": {
         "@archon/git": "workspace:*",
+        "@archon/isolation": "workspace:*",
         "@archon/paths": "workspace:*",
         "@archon/providers": "workspace:*",
         "@hono/zod-openapi": "^0.19.6",
